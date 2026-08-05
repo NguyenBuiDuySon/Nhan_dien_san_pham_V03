@@ -1,0 +1,89 @@
+{
+  "serial": {
+    "port": "MOCK_COM",
+    "baudrate": 115200,
+    "timeout": 1.0,
+    "mock_mode": true
+  },
+  "model": {
+    "path": ""
+  },
+  "camera": {
+    "source": 0,
+    "width": 560,
+    "height": 480
+  },
+  "gantry": {
+    "default_jog_step_mm": 5.0,
+    "last_position": {
+      "x": 45.0,
+      "y": 0.0,
+      "z": 0.0
+    },
+    "home": {
+      "x": 0.0,
+      "y": 0.0,
+      "z": 0.0
+    },
+    "limits": {
+      "x_min": 0.0,
+      "x_max": 9999.0,
+      "y_min": 0.0,
+      "y_max": 9999.0,
+      "z_min": 0.0,
+      "z_max": 9999.0
+    }
+  },
+  "vision": {
+    "roi": {
+      "x": 444,
+      "y": 133,
+      "w": 571,
+      "h": 438
+    },
+    "sample_box_ratio": 0.55,
+    "classification": {
+      "min_confidence": 0.25,
+      "min_margin": 0.08,
+      "min_color_pixels": 250,
+      "kernel_size": 3,
+      "blur_kernel_size": 1
+    },
+    "presence": {
+      "require_background": true,
+      "diff_threshold": 25,
+      "enter_change_ratio": 0.08,
+      "exit_change_ratio": 0.04,
+      "kernel_size": 5
+    },
+    "stability": {
+      "window_size": 7,
+      "minimum_votes": 5,
+      "release_frames": 5
+    },
+    "yolo": {
+      "enabled": false,
+      "confidence": 0.5
+    }
+  },
+  "colors": {
+    "red": {
+      "h_min": 0,
+      "h_max": 10,
+      "s_min": 100,
+      "v_min": 100
+    },
+    "green": {
+      "h_min": 35,
+      "h_max": 85,
+      "s_min": 80,
+      "v_min": 80
+    },
+    "blue": {
+      "h_min": 100,
+      "h_max": 140,
+      "s_min": 90,
+      "v_min": 90
+    }
+  }
+}

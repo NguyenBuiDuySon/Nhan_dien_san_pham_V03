@@ -1,0 +1,5 @@
+PySide6
+pyserial
+opencv-python
+numpy
+# ultralytics  # Cài sau khi bắt đầu train/inference YOLO.

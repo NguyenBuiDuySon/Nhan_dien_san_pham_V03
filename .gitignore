@@ -1,0 +1,30 @@
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Virtual environments
+.venv/
+.venv_backup_*/
+
+# Local IDE backups, but keep shared VS Code settings.
+.vscode/*
+!.vscode/settings.json
+!.vscode/launch.json
+.vscode_old_*/
+
+# Temporary project backups
+backup_before_flatten_*/
+_patch_backups/
+fixed/backups/*
+!fixed/backups/.gitkeep
+
+# Machine-specific runtime data
+config/background_reference.png
+
+# Trained models can be large; add explicitly when needed.
+models/*.pt
+models/*.onnx
+
+# OS files
+Thumbs.db
+.DS_Store

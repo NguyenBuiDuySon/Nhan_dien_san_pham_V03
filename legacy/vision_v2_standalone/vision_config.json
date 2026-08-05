@@ -1,0 +1,22 @@
+{
+  "camera": {
+    "id": 0,
+    "width": 640,
+    "height": 480
+  },
+  "roi": {
+    "x": 220,
+    "y": 140,
+    "w": 200,
+    "h": 200
+  },
+  "classification": {
+    "min_confidence": 0.25,
+    "min_margin": 0.08,
+    "min_color_pixels": 300,
+    "kernel_size": 3
+  },
+  "ui": {
+    "debug": true
+  }
+}
