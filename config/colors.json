@@ -1,61 +1,37 @@
 {
-  "green": {
-    "display_name": "XANH LÁ",
-    "ui_color": "#22c55e",
-    "ranges": [
-      {
-        "lower": [
-          35,
-          60,
-          60
-        ],
-        "upper": [
-          90,
-          255,
-          255
-        ]
-      }
-    ]
-  },
   "blue": {
     "display_name": "XANH DƯƠNG",
     "ui_color": "#38bdf8",
     "ranges": [
       {
         "lower": [
-          90,
-          70,
-          60
+          109,
+          92,
+          55
         ],
         "upper": [
-          135,
+          120,
           255,
-          255
+          227
         ]
-      }
-    ]
-  },
-  "tim": {
-    "display_name": "TÍM",
-    "ui_color": "#facc15",
-    "ranges": [
+      },
       {
         "lower": [
-          0,
-          68,
-          81
+          97,
+          40,
+          71
         ],
         "upper": [
-          25,
-          244,
-          192
+          111,
+          255,
+          239
         ]
       }
     ]
   },
   "den": {
     "display_name": "ĐEN",
-    "ui_color": "#facc15",
+    "ui_color": "#cbd5e1",
     "ranges": [
       {
         "lower": [
@@ -67,6 +43,24 @@
           124,
           75,
           83
+        ]
+      }
+    ]
+  },
+  "do": {
+    "display_name": "ĐỎ",
+    "ui_color": "#ef4444",
+    "ranges": [
+      {
+        "lower": [
+          0,
+          89,
+          78
+        ],
+        "upper": [
+          25,
+          252,
+          254
         ]
       }
     ]

@@ -1,6 +1,6 @@
 {
   "serial": {
-    "port": "MOCK_COM",
+    "port": "COM1",
     "baudrate": 115200,
     "timeout": 1.0,
     "mock_mode": true
@@ -10,13 +10,13 @@
   },
   "camera": {
     "source": 0,
-    "width": 560,
-    "height": 480
+    "width": 720,
+    "height": 540
   },
   "gantry": {
     "default_jog_step_mm": 5.0,
     "last_position": {
-      "x": 45.0,
+      "x": 0.0,
       "y": 0.0,
       "z": 0.0
     },
@@ -36,10 +36,10 @@
   },
   "vision": {
     "roi": {
-      "x": 444,
-      "y": 133,
-      "w": 571,
-      "h": 438
+      "x": 493,
+      "y": 46,
+      "w": 643,
+      "h": 497
     },
     "sample_box_ratio": 0.55,
     "classification": {

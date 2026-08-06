@@ -11,6 +11,9 @@ Write-Host "=== COMPILE SOURCE ===" -ForegroundColor Cyan
 Write-Host "=== VISION CORE ===" -ForegroundColor Cyan
 & $PythonExe .\scripts\test_vision_core.py
 
+Write-Host "=== PRODUCTION COUNTER ===" -ForegroundColor Cyan
+& $PythonExe .\scripts\test_product_counter_persistence.py
+
 Write-Host "=== SERIAL DISCONNECT ===" -ForegroundColor Cyan
 & $PythonExe .\scripts\test_serial_disconnect.py
 

@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMessageBox,
     QMainWindow,
     QPlainTextEdit,
     QPushButton,
@@ -145,6 +146,17 @@ class MainWindow(QMainWindow):
 
         self.append_log("Đã tải cấu hình từ config/app_config.json.")
         self.append_log("Vision v0.2 đã tích hợp: ROI, Sampling Box, HSV, Stability và Counter.")
+        self.append_log(
+            "Đã khôi phục bộ đếm sản xuất: "
+            f"{self.counter_service.snapshot()}"
+        )
+
+        if self.counter_service.last_load_error:
+            self.append_log(
+                "Không đọc được counters.json cũ; đã tạo bộ đếm mới. "
+                f"Chi tiết: {self.counter_service.last_load_error}",
+                level="WARN",
+            )
 
     # =========================
     # BUILD UI
@@ -343,19 +355,27 @@ class MainWindow(QMainWindow):
 
         camera_layout.addLayout(camera_button_row)
         camera_layout.addWidget(camera_help)
-        camera_layout.addWidget(self.camera_view)
+        camera_layout.addWidget(self.camera_view, 1)
 
         self.mask_box = QGroupBox("HSV BINARY MASK")
+        self.mask_box.setMinimumHeight(240)
+        self.mask_box.setMaximumHeight(275)
+        self.mask_box.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Fixed,
+        )
+
         mask_layout = QVBoxLayout(self.mask_box)
         mask_layout.setSpacing(INNER_GAP)
         mask_layout.setContentsMargins(8, 8, 8, 8)
 
         self.mask_view = QLabel("MASK VIEW")
         self.mask_view.setAlignment(Qt.AlignCenter)
-        self.mask_view.setMinimumHeight(150)
+        self.mask_view.setMinimumHeight(165)
+        self.mask_view.setMaximumHeight(205)
         self.mask_view.setSizePolicy(
             QSizePolicy.Policy.Expanding,
-            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Fixed,
         )
         self.mask_view.setStyleSheet(
             "background-color: #020617; color: #64748b; "
@@ -375,8 +395,8 @@ class MainWindow(QMainWindow):
         self.center_vision_layout = layout
         self.camera_box = camera_box
 
-        layout.addWidget(self.camera_box, 3)
-        layout.addWidget(self.mask_box, 2)
+        layout.addWidget(self.camera_box, 1)
+        layout.addWidget(self.mask_box, 0)
         return wrapper
 
     def build_right_panel(self) -> QWidget:
@@ -396,7 +416,7 @@ class MainWindow(QMainWindow):
 
     def build_stats_box(self) -> QGroupBox:
         """Tạo thống kê động theo danh sách màu trong colors.json."""
-        box = QGroupBox("THỐNG KÊ SẢN PHẨM")
+        box = QGroupBox("BỘ ĐẾM SẢN XUẤT")
         layout = QVBoxLayout(box)
         layout.setSpacing(INNER_GAP)
         layout.setContentsMargins(BOX_MARGIN, BOX_MARGIN, BOX_MARGIN, BOX_MARGIN)
@@ -405,19 +425,20 @@ class MainWindow(QMainWindow):
         self.stats_grid.setHorizontalSpacing(ROW_GAP)
         self.stats_grid.setVerticalSpacing(ROW_GAP)
 
-        self.test_grid = QGridLayout()
-        self.test_grid.setHorizontalSpacing(ROW_GAP)
-        self.test_grid.setVerticalSpacing(ROW_GAP)
-
         self.stat_values: dict[str, QLabel] = {}
-        self.test_count_buttons: list[QPushButton] = []
 
-        self.btn_reset_counts = QPushButton("RESET ĐẾM")
-        self.btn_reset_counts.setStyleSheet("background-color: #334155;")
+        self.btn_reset_counts = QPushButton("RESET BỘ ĐẾM")
+        self.btn_reset_counts.setStyleSheet(
+            "background-color: #4c2630; "
+            "border: 1px solid #7f3b46; "
+            "color: #f8fafc;"
+        )
+        self.btn_reset_counts.setToolTip(
+            "Đặt toàn bộ bộ đếm sản xuất về 0."
+        )
 
         layout.addLayout(self.stats_grid)
         layout.addWidget(self.btn_reset_counts)
-        layout.addLayout(self.test_grid)
 
         self.rebuild_stat_cards()
         return box
@@ -668,6 +689,42 @@ class MainWindow(QMainWindow):
 
         return card
 
+    @staticmethod
+    def build_soft_color_button_style(ui_color: str) -> str:
+        # Tạo nền nút tối, giữ sắc màu nhưng không gây chói mắt.
+        value = str(ui_color).strip().lstrip("#")
+
+        if len(value) != 6:
+            value = "64748b"
+
+        try:
+            red = int(value[0:2], 16)
+            green = int(value[2:4], 16)
+            blue = int(value[4:6], 16)
+        except ValueError:
+            red, green, blue = 100, 116, 139
+
+        background = (
+            max(24, int(red * 0.34)),
+            max(24, int(green * 0.34)),
+            max(24, int(blue * 0.34)),
+        )
+        border = (
+            max(55, int(red * 0.72)),
+            max(55, int(green * 0.72)),
+            max(55, int(blue * 0.72)),
+        )
+
+        background_hex = "#{:02x}{:02x}{:02x}".format(*background)
+        border_hex = "#{:02x}{:02x}{:02x}".format(*border)
+
+        return (
+            f"background-color: {background_hex}; "
+            "color: #f8fafc; "
+            f"border: 1px solid {border_hex}; "
+            "font-weight: 800;"
+        )
+
     def clear_layout(self, layout) -> None:
         """Xóa widget khỏi layout để có thể dựng lại thống kê động."""
         while layout.count():
@@ -682,9 +739,7 @@ class MainWindow(QMainWindow):
             return
 
         self.clear_layout(self.stats_grid)
-        self.clear_layout(self.test_grid)
         self.stat_values.clear()
-        self.test_count_buttons.clear()
 
         color_keys = self.color_repository.color_keys()
         self.counter_service.configure_keys(color_keys)
@@ -703,14 +758,6 @@ class MainWindow(QMainWindow):
 
             card = self.create_stat_card(key, title, "0", ui_color)
             self.stats_grid.addWidget(card, row, column)
-
-            button = QPushButton(f"TEST {title}")
-            button.setStyleSheet(f"background-color: {ui_color}; color: #ffffff;")
-            button.clicked.connect(
-                lambda checked=False, color_key=key: self.handle_test_count(color_key)
-            )
-            self.test_grid.addWidget(button, row, column)
-            self.test_count_buttons.append(button)
 
         self.refresh_count_ui()
 
@@ -1246,35 +1293,53 @@ class MainWindow(QMainWindow):
         return QPixmap.fromImage(image.copy())
 
     def handle_mask_toggle(self) -> None:
-        """Ẩn/hiện toàn bộ panel mask và khôi phục tỷ lệ layout ổn định."""
+        """Ẩn/hiện nội dung mask nhưng giữ nguyên bố cục Camera-first."""
         self.mask_visible = not self.mask_visible
-        self.mask_box.setVisible(self.mask_visible)
 
         if self.mask_visible:
             self.btn_mask_toggle.setText("ẨN MASK")
-            self.center_vision_layout.setStretch(0, 3)
-            self.center_vision_layout.setStretch(1, 2)
 
             if self.latest_mask_frame is not None:
                 self.show_mask_frame(self.latest_mask_frame)
+            else:
+                self._set_preview_message(
+                    self.mask_view,
+                    "MASK VIEW\n\nChưa có dữ liệu mask.",
+                    point_size=11.0,
+                )
 
             self.append_log("HSV Mask: đã bật hiển thị.")
-        else:
-            self.btn_mask_toggle.setText("HIỆN MASK")
-            self.center_vision_layout.setStretch(0, 1)
-            self.center_vision_layout.setStretch(1, 0)
-            self.append_log("HSV Mask: đã ẩn hiển thị.")
+            return
 
-        self.center_vision_layout.invalidate()
-        self.center_vision_layout.activate()
+        self.btn_mask_toggle.setText("HIỆN MASK")
+        self._set_preview_message(
+            self.mask_view,
+            "MASK VIEW\n\nĐÃ ẨN HIỂN THỊ",
+            point_size=11.0,
+        )
+        self.append_log("HSV Mask: đã ẩn nội dung, giữ nguyên bố cục.")
 
     def handle_reset_counts(self) -> None:
+        answer = QMessageBox.question(
+            self,
+            "Xác nhận reset bộ đếm",
+            "Toàn bộ bộ đếm sản xuất sẽ về 0 và được lưu ngay.\n"
+            "Bạn có chắc muốn tiếp tục?",
+            QMessageBox.StandardButton.Yes
+            | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+
+        if answer != QMessageBox.StandardButton.Yes:
+            self.append_log("Đã hủy reset bộ đếm sản xuất.")
+            return
+
         self.counter_service.reset()
         self.refresh_count_ui()
-        self.append_log("Đã reset số đếm sản phẩm về 0.")
-
-    def handle_test_count(self, color_key: str) -> None:
-        self.increment_product_count(color_key, source="TEST")
+        self.append_log(
+            "Đã reset và lưu bộ đếm sản xuất về 0.",
+            level="WARN",
+        )
 
 
     def increment_product_count(self, color_key: str, source: str = "SYSTEM") -> None:
@@ -1796,6 +1861,7 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
 
+        self.counter_service.save()
         self.save_gantry_position_to_config()
         super().closeEvent(event)
 
