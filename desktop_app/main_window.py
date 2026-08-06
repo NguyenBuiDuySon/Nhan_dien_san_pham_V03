@@ -343,19 +343,27 @@ class MainWindow(QMainWindow):
 
         camera_layout.addLayout(camera_button_row)
         camera_layout.addWidget(camera_help)
-        camera_layout.addWidget(self.camera_view)
+        camera_layout.addWidget(self.camera_view, 1)
 
         self.mask_box = QGroupBox("HSV BINARY MASK")
+        self.mask_box.setMinimumHeight(190)
+        self.mask_box.setMaximumHeight(220)
+        self.mask_box.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Fixed,
+        )
+
         mask_layout = QVBoxLayout(self.mask_box)
         mask_layout.setSpacing(INNER_GAP)
         mask_layout.setContentsMargins(8, 8, 8, 8)
 
         self.mask_view = QLabel("MASK VIEW")
         self.mask_view.setAlignment(Qt.AlignCenter)
-        self.mask_view.setMinimumHeight(150)
+        self.mask_view.setMinimumHeight(110)
+        self.mask_view.setMaximumHeight(145)
         self.mask_view.setSizePolicy(
             QSizePolicy.Policy.Expanding,
-            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Fixed,
         )
         self.mask_view.setStyleSheet(
             "background-color: #020617; color: #64748b; "
@@ -375,8 +383,8 @@ class MainWindow(QMainWindow):
         self.center_vision_layout = layout
         self.camera_box = camera_box
 
-        layout.addWidget(self.camera_box, 3)
-        layout.addWidget(self.mask_box, 2)
+        layout.addWidget(self.camera_box, 1)
+        layout.addWidget(self.mask_box, 0)
         return wrapper
 
     def build_right_panel(self) -> QWidget:
@@ -1246,27 +1254,31 @@ class MainWindow(QMainWindow):
         return QPixmap.fromImage(image.copy())
 
     def handle_mask_toggle(self) -> None:
-        """Ẩn/hiện toàn bộ panel mask và khôi phục tỷ lệ layout ổn định."""
+        """Ẩn/hiện nội dung mask nhưng giữ nguyên bố cục Camera-first."""
         self.mask_visible = not self.mask_visible
-        self.mask_box.setVisible(self.mask_visible)
 
         if self.mask_visible:
             self.btn_mask_toggle.setText("ẨN MASK")
-            self.center_vision_layout.setStretch(0, 3)
-            self.center_vision_layout.setStretch(1, 2)
 
             if self.latest_mask_frame is not None:
                 self.show_mask_frame(self.latest_mask_frame)
+            else:
+                self._set_preview_message(
+                    self.mask_view,
+                    "MASK VIEW\n\nChưa có dữ liệu mask.",
+                    point_size=11.0,
+                )
 
             self.append_log("HSV Mask: đã bật hiển thị.")
-        else:
-            self.btn_mask_toggle.setText("HIỆN MASK")
-            self.center_vision_layout.setStretch(0, 1)
-            self.center_vision_layout.setStretch(1, 0)
-            self.append_log("HSV Mask: đã ẩn hiển thị.")
+            return
 
-        self.center_vision_layout.invalidate()
-        self.center_vision_layout.activate()
+        self.btn_mask_toggle.setText("HIỆN MASK")
+        self._set_preview_message(
+            self.mask_view,
+            "MASK VIEW\n\nĐÃ ẨN HIỂN THỊ",
+            point_size=11.0,
+        )
+        self.append_log("HSV Mask: đã ẩn nội dung, giữ nguyên bố cục.")
 
     def handle_reset_counts(self) -> None:
         self.counter_service.reset()
