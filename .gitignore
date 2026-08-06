@@ -28,3 +28,7 @@ models/*.onnx
 # OS files
 Thumbs.db
 .DS_Store
+
+# Runtime production counters - do not commit machine data.
+config/counters.json
+config/counters.json.tmp

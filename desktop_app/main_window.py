@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMessageBox,
     QMainWindow,
     QPlainTextEdit,
     QPushButton,
@@ -145,6 +146,17 @@ class MainWindow(QMainWindow):
 
         self.append_log("Đã tải cấu hình từ config/app_config.json.")
         self.append_log("Vision v0.2 đã tích hợp: ROI, Sampling Box, HSV, Stability và Counter.")
+        self.append_log(
+            "Đã khôi phục bộ đếm sản xuất: "
+            f"{self.counter_service.snapshot()}"
+        )
+
+        if self.counter_service.last_load_error:
+            self.append_log(
+                "Không đọc được counters.json cũ; đã tạo bộ đếm mới. "
+                f"Chi tiết: {self.counter_service.last_load_error}",
+                level="WARN",
+            )
 
     # =========================
     # BUILD UI
@@ -404,7 +416,7 @@ class MainWindow(QMainWindow):
 
     def build_stats_box(self) -> QGroupBox:
         """Tạo thống kê động theo danh sách màu trong colors.json."""
-        box = QGroupBox("THỐNG KÊ SẢN PHẨM")
+        box = QGroupBox("BỘ ĐẾM SẢN XUẤT")
         layout = QVBoxLayout(box)
         layout.setSpacing(INNER_GAP)
         layout.setContentsMargins(BOX_MARGIN, BOX_MARGIN, BOX_MARGIN, BOX_MARGIN)
@@ -413,19 +425,20 @@ class MainWindow(QMainWindow):
         self.stats_grid.setHorizontalSpacing(ROW_GAP)
         self.stats_grid.setVerticalSpacing(ROW_GAP)
 
-        self.test_grid = QGridLayout()
-        self.test_grid.setHorizontalSpacing(ROW_GAP)
-        self.test_grid.setVerticalSpacing(ROW_GAP)
-
         self.stat_values: dict[str, QLabel] = {}
-        self.test_count_buttons: list[QPushButton] = []
 
-        self.btn_reset_counts = QPushButton("RESET ĐẾM")
-        self.btn_reset_counts.setStyleSheet("background-color: #334155;")
+        self.btn_reset_counts = QPushButton("RESET BỘ ĐẾM")
+        self.btn_reset_counts.setStyleSheet(
+            "background-color: #4c2630; "
+            "border: 1px solid #7f3b46; "
+            "color: #f8fafc;"
+        )
+        self.btn_reset_counts.setToolTip(
+            "Đặt toàn bộ bộ đếm sản xuất về 0."
+        )
 
         layout.addLayout(self.stats_grid)
         layout.addWidget(self.btn_reset_counts)
-        layout.addLayout(self.test_grid)
 
         self.rebuild_stat_cards()
         return box
@@ -726,9 +739,7 @@ class MainWindow(QMainWindow):
             return
 
         self.clear_layout(self.stats_grid)
-        self.clear_layout(self.test_grid)
         self.stat_values.clear()
-        self.test_count_buttons.clear()
 
         color_keys = self.color_repository.color_keys()
         self.counter_service.configure_keys(color_keys)
@@ -747,16 +758,6 @@ class MainWindow(QMainWindow):
 
             card = self.create_stat_card(key, title, "0", ui_color)
             self.stats_grid.addWidget(card, row, column)
-
-            button = QPushButton(title)
-            button.setStyleSheet(
-                self.build_soft_color_button_style(ui_color)
-            )
-            button.clicked.connect(
-                lambda checked=False, color_key=key: self.handle_test_count(color_key)
-            )
-            self.test_grid.addWidget(button, row, column)
-            self.test_count_buttons.append(button)
 
         self.refresh_count_ui()
 
@@ -1319,12 +1320,26 @@ class MainWindow(QMainWindow):
         self.append_log("HSV Mask: đã ẩn nội dung, giữ nguyên bố cục.")
 
     def handle_reset_counts(self) -> None:
+        answer = QMessageBox.question(
+            self,
+            "Xác nhận reset bộ đếm",
+            "Toàn bộ bộ đếm sản xuất sẽ về 0 và được lưu ngay.\n"
+            "Bạn có chắc muốn tiếp tục?",
+            QMessageBox.StandardButton.Yes
+            | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+
+        if answer != QMessageBox.StandardButton.Yes:
+            self.append_log("Đã hủy reset bộ đếm sản xuất.")
+            return
+
         self.counter_service.reset()
         self.refresh_count_ui()
-        self.append_log("Đã reset số đếm sản phẩm về 0.")
-
-    def handle_test_count(self, color_key: str) -> None:
-        self.increment_product_count(color_key, source="TEST")
+        self.append_log(
+            "Đã reset và lưu bộ đếm sản xuất về 0.",
+            level="WARN",
+        )
 
 
     def increment_product_count(self, color_key: str, source: str = "SYSTEM") -> None:
@@ -1846,6 +1861,7 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
 
+        self.counter_service.save()
         self.save_gantry_position_to_config()
         super().closeEvent(event)
 
