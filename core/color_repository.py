@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import colorsys
 import copy
 import json
 import re
@@ -82,6 +83,7 @@ class ColorRepository:
                 raise ValueError("colors.json phải là một JSON object")
 
             normalized: dict[str, dict[str, Any]] = {}
+            metadata_changed = False
 
             for raw_key, raw_profile in raw_data.items():
                 key = self.normalize_key(str(raw_key))
@@ -91,6 +93,14 @@ class ColorRepository:
 
                 profile = self._normalize_profile(key, raw_profile)
 
+                raw_ui_color = (
+                    raw_profile.get("ui_color")
+                    if isinstance(raw_profile, dict)
+                    else None
+                )
+                if raw_ui_color != profile["ui_color"]:
+                    metadata_changed = True
+
                 if profile["ranges"]:
                     normalized[key] = profile
 
@@ -98,6 +108,9 @@ class ColorRepository:
                 raise ValueError("colors.json không có hồ sơ màu hợp lệ")
 
             self.colors = normalized
+
+            if metadata_changed:
+                self.save()
 
         except (OSError, json.JSONDecodeError, ValueError, TypeError):
             self.colors = copy.deepcopy(DEFAULT_COLORS)
@@ -133,8 +146,17 @@ class ColorRepository:
         return str(profile.get("display_name", color_key.upper()))
 
     def get_ui_color(self, color_key: str) -> str:
-        profile = self.colors.get(color_key, {})
-        return str(profile.get("ui_color", "#facc15"))
+        key = self.normalize_key(color_key)
+        profile = self.colors.get(key, {})
+        display_name = str(profile.get("display_name", key.upper()))
+        ranges = profile.get("ranges", [])
+
+        return self.resolve_ui_color(
+            key,
+            display_name,
+            profile.get("ui_color"),
+            ranges,
+        )
 
     def get_detection_config(self) -> dict[str, list[dict[str, list[int]]]]:
         """Trả cấu hình gọn chỉ gồm các khoảng HSV cho ColorEngine."""
@@ -147,7 +169,7 @@ class ColorRepository:
         self,
         display_name: str,
         hsv_range: dict[str, list[int]],
-        ui_color: str = "#facc15",
+        ui_color: str | None = None,
     ) -> str:
         """Thêm màu mới và trả về key đã chuẩn hóa."""
         key = self.normalize_key(display_name)
@@ -158,10 +180,18 @@ class ColorRepository:
         if key in self.colors:
             raise ValueError(f"Màu '{display_name}' đã tồn tại")
 
+        normalized_range = self.normalize_range(hsv_range)
+        normalized_name = display_name.strip().upper()
+
         self.colors[key] = {
-            "display_name": display_name.strip().upper(),
-            "ui_color": ui_color,
-            "ranges": [self.normalize_range(hsv_range)],
+            "display_name": normalized_name,
+            "ui_color": self.resolve_ui_color(
+                key,
+                normalized_name,
+                ui_color,
+                [normalized_range],
+            ),
+            "ranges": [normalized_range],
         }
         self.save()
         return key
@@ -293,7 +323,12 @@ class ColorRepository:
                 if isinstance(item, dict)
             ]
             display_name = str(data.get("display_name", key.upper()))
-            ui_color = str(data.get("ui_color", "#facc15"))
+            ui_color = self.resolve_ui_color(
+                key,
+                display_name,
+                data.get("ui_color"),
+                ranges,
+            )
             return {
                 "display_name": display_name,
                 "ui_color": ui_color,
@@ -306,9 +341,15 @@ class ColorRepository:
                 for item in data
                 if isinstance(item, dict)
             ]
+            display_name = key.upper()
             return {
-                "display_name": key.upper(),
-                "ui_color": "#facc15",
+                "display_name": display_name,
+                "ui_color": self.resolve_ui_color(
+                    key,
+                    display_name,
+                    None,
+                    ranges,
+                ),
                 "ranges": ranges,
             }
 
@@ -325,17 +366,120 @@ class ColorRepository:
                     data.get("v_max", 255),
                 ],
             }
+            normalized_ranges = [self.normalize_range(legacy_range)]
+            display_name = key.upper()
             return {
-                "display_name": key.upper(),
-                "ui_color": "#facc15",
-                "ranges": [self.normalize_range(legacy_range)],
+                "display_name": display_name,
+                "ui_color": self.resolve_ui_color(
+                    key,
+                    display_name,
+                    None,
+                    normalized_ranges,
+                ),
+                "ranges": normalized_ranges,
             }
 
+        display_name = key.upper()
         return {
-            "display_name": key.upper(),
-            "ui_color": "#facc15",
+            "display_name": display_name,
+            "ui_color": self.resolve_ui_color(
+                key,
+                display_name,
+                None,
+                [],
+            ),
             "ranges": [],
         }
+
+    @classmethod
+    def resolve_ui_color(
+        cls,
+        key: str,
+        display_name: str,
+        ui_color: Any,
+        ranges: list[dict[str, list[int]]],
+    ) -> str:
+        normalized_key = cls.normalize_key(key)
+        normalized_name = cls.normalize_key(display_name)
+        provided = cls.normalize_hex_color(ui_color)
+
+        is_yellow_name = any(
+            token in normalized_key or token in normalized_name
+            for token in ("yellow", "vang")
+        )
+
+        if provided and not (
+            provided.lower() == "#facc15" and not is_yellow_name
+        ):
+            return provided
+
+        return cls.derive_ui_color(
+            normalized_key,
+            normalized_name,
+            ranges,
+        )
+
+    @staticmethod
+    def normalize_hex_color(value: Any) -> str | None:
+        text = str(value or "").strip()
+
+        if re.fullmatch(r"#[0-9a-fA-F]{6}", text):
+            return text.lower()
+
+        return None
+
+    @classmethod
+    def derive_ui_color(
+        cls,
+        normalized_key: str,
+        normalized_name: str,
+        ranges: list[dict[str, list[int]]],
+    ) -> str:
+        combined_name = f"{normalized_key}_{normalized_name}"
+
+        named_colors = (
+            (("black", "den"), "#cbd5e1"),
+            (("white", "trang"), "#e2e8f0"),
+            (("gray", "grey", "xam"), "#94a3b8"),
+            (("red", "do"), "#ef4444"),
+            (("yellow", "vang"), "#facc15"),
+            (("green", "xanh_la"), "#22c55e"),
+            (("blue", "xanh_duong"), "#38bdf8"),
+            (("purple", "violet", "tim"), "#a855f7"),
+            (("orange", "cam"), "#f97316"),
+            (("pink", "hong"), "#ec4899"),
+            (("brown", "nau"), "#b7791f"),
+        )
+
+        for aliases, color in named_colors:
+            if any(alias in combined_name for alias in aliases):
+                return color
+
+        if not ranges:
+            return "#94a3b8"
+
+        hsv_range = ranges[0]
+        lower = hsv_range.get("lower", [0, 0, 0])
+        upper = hsv_range.get("upper", [179, 255, 255])
+
+        hue = (float(lower[0]) + float(upper[0])) / 2.0
+        saturation = (float(lower[1]) + float(upper[1])) / (2.0 * 255.0)
+        value = (float(lower[2]) + float(upper[2])) / (2.0 * 255.0)
+
+        saturation = max(0.55, min(0.88, saturation))
+        value = max(0.72, min(0.90, value))
+
+        red, green, blue = colorsys.hsv_to_rgb(
+            hue / 179.0,
+            saturation,
+            value,
+        )
+
+        return "#{:02x}{:02x}{:02x}".format(
+            int(red * 255),
+            int(green * 255),
+            int(blue * 255),
+        )
 
     @staticmethod
     def _clamp(value: Any, minimum: int, maximum: int) -> int:

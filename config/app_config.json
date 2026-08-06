@@ -36,10 +36,10 @@
   },
   "vision": {
     "roi": {
-      "x": 537,
-      "y": 51,
-      "w": 545,
-      "h": 437
+      "x": 493,
+      "y": 46,
+      "w": 643,
+      "h": 497
     },
     "sample_box_ratio": 0.55,
     "classification": {

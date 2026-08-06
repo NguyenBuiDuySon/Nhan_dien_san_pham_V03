@@ -5,21 +5,33 @@
     "ranges": [
       {
         "lower": [
-          0,
-          52,
-          69
+          109,
+          92,
+          55
         ],
         "upper": [
-          25,
+          120,
           255,
-          223
+          227
+        ]
+      },
+      {
+        "lower": [
+          97,
+          40,
+          71
+        ],
+        "upper": [
+          111,
+          255,
+          239
         ]
       }
     ]
   },
   "den": {
     "display_name": "ĐEN",
-    "ui_color": "#facc15",
+    "ui_color": "#cbd5e1",
     "ranges": [
       {
         "lower": [
@@ -35,38 +47,20 @@
       }
     ]
   },
-  "vang": {
-    "display_name": "VÀNG",
-    "ui_color": "#facc15",
-    "ranges": [
-      {
-        "lower": [
-          17,
-          48,
-          76
-        ],
-        "upper": [
-          32,
-          255,
-          255
-        ]
-      }
-    ]
-  },
   "do": {
     "display_name": "ĐỎ",
-    "ui_color": "#facc15",
+    "ui_color": "#ef4444",
     "ranges": [
       {
         "lower": [
           0,
-          16,
-          41
+          89,
+          78
         ],
         "upper": [
           25,
-          236,
-          200
+          252,
+          254
         ]
       }
     ]

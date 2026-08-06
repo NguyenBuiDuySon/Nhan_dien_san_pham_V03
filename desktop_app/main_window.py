@@ -346,8 +346,8 @@ class MainWindow(QMainWindow):
         camera_layout.addWidget(self.camera_view, 1)
 
         self.mask_box = QGroupBox("HSV BINARY MASK")
-        self.mask_box.setMinimumHeight(190)
-        self.mask_box.setMaximumHeight(220)
+        self.mask_box.setMinimumHeight(240)
+        self.mask_box.setMaximumHeight(275)
         self.mask_box.setSizePolicy(
             QSizePolicy.Policy.Expanding,
             QSizePolicy.Policy.Fixed,
@@ -359,8 +359,8 @@ class MainWindow(QMainWindow):
 
         self.mask_view = QLabel("MASK VIEW")
         self.mask_view.setAlignment(Qt.AlignCenter)
-        self.mask_view.setMinimumHeight(110)
-        self.mask_view.setMaximumHeight(145)
+        self.mask_view.setMinimumHeight(165)
+        self.mask_view.setMaximumHeight(205)
         self.mask_view.setSizePolicy(
             QSizePolicy.Policy.Expanding,
             QSizePolicy.Policy.Fixed,
@@ -676,6 +676,42 @@ class MainWindow(QMainWindow):
 
         return card
 
+    @staticmethod
+    def build_soft_color_button_style(ui_color: str) -> str:
+        # Tạo nền nút tối, giữ sắc màu nhưng không gây chói mắt.
+        value = str(ui_color).strip().lstrip("#")
+
+        if len(value) != 6:
+            value = "64748b"
+
+        try:
+            red = int(value[0:2], 16)
+            green = int(value[2:4], 16)
+            blue = int(value[4:6], 16)
+        except ValueError:
+            red, green, blue = 100, 116, 139
+
+        background = (
+            max(24, int(red * 0.34)),
+            max(24, int(green * 0.34)),
+            max(24, int(blue * 0.34)),
+        )
+        border = (
+            max(55, int(red * 0.72)),
+            max(55, int(green * 0.72)),
+            max(55, int(blue * 0.72)),
+        )
+
+        background_hex = "#{:02x}{:02x}{:02x}".format(*background)
+        border_hex = "#{:02x}{:02x}{:02x}".format(*border)
+
+        return (
+            f"background-color: {background_hex}; "
+            "color: #f8fafc; "
+            f"border: 1px solid {border_hex}; "
+            "font-weight: 800;"
+        )
+
     def clear_layout(self, layout) -> None:
         """Xóa widget khỏi layout để có thể dựng lại thống kê động."""
         while layout.count():
@@ -712,8 +748,10 @@ class MainWindow(QMainWindow):
             card = self.create_stat_card(key, title, "0", ui_color)
             self.stats_grid.addWidget(card, row, column)
 
-            button = QPushButton(f"TEST {title}")
-            button.setStyleSheet(f"background-color: {ui_color}; color: #ffffff;")
+            button = QPushButton(title)
+            button.setStyleSheet(
+                self.build_soft_color_button_style(ui_color)
+            )
             button.clicked.connect(
                 lambda checked=False, color_key=key: self.handle_test_count(color_key)
             )
