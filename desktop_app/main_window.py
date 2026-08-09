@@ -1722,26 +1722,27 @@ class MainWindow(QMainWindow):
             axis_input.setValue(value)
             axis_input.blockSignals(False)
 
-    def apply_jog_step(self, axis_name: str, direction: int) -> None:
-        try:
-            next_value, _ = self.gantry.jog(
-                axis=axis_name,
-                step=self.get_jog_step(),
-                direction=direction,
-            )
-        except ValueError as error:
-            self.append_log(str(error), level="WARN")
-            self.stop_continuous_jog()
-            return
+    def apply_jog_step(self, axis_name: str, direction: int) -> str:
+        step_mm = float(self.jog_step_input.value())
 
-        self.set_axis_value(axis_name, next_value)
+        value, message = self.gantry.jog(
+            axis=axis_name,
+            step_mm=step_mm,
+            direction=direction,
+        )
+
+        self.set_axis_value(axis_name, value)
+        self.save_gantry_position_to_config()
+
+        return message
 
     def start_continuous_jog(self, axis_name: str, direction: int) -> None:
         self.active_jog_axis = axis_name
         self.active_jog_direction = direction
 
         # Chạy ngay bước đầu tiên để người dùng thấy phản hồi tức thì.
-        self.apply_jog_step(axis_name, direction)
+        message = self.apply_jog_step(axis_name, direction)
+        self.append_log(message)
 
         if not self.jog_timer.isActive():
             self.jog_timer.start()
@@ -1750,7 +1751,11 @@ class MainWindow(QMainWindow):
         if self.active_jog_axis is None or self.active_jog_direction == 0:
             return
 
-        self.apply_jog_step(self.active_jog_axis, self.active_jog_direction)
+        message = self.apply_jog_step(
+            self.active_jog_axis,
+            self.active_jog_direction,
+        )
+        self.append_log(message)
 
     def stop_continuous_jog(self) -> None:
         if self.jog_timer.isActive():
@@ -1761,10 +1766,10 @@ class MainWindow(QMainWindow):
 
         final_value = self.get_axis_value(self.active_jog_axis)
 
-        self.append_log(
-            f"Manual: Jog trục {self.active_jog_axis} dừng tại {final_value:.1f} mm."
-        )
-        
+        # self.append_log(
+        #     f"Manual: Jog trục {self.active_jog_axis} dừng tại {final_value:.1f} mm."
+        # )
+
         self.save_gantry_position_to_config()
         self.active_jog_axis = None
         self.active_jog_direction = 0

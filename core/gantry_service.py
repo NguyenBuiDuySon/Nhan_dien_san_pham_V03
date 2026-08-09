@@ -50,26 +50,34 @@ class GantryService:
 
         return safe_value, f"Manual: đặt trục {axis} = {safe_value:.1f} mm."
 
-    def jog(self, axis: str, step: float, direction: int) -> tuple[float, str]:
-        axis = self._normalize_axis(axis)
+    def jog(self, axis: str, step_mm: float, direction: int) -> tuple[float, str]:
+        axis = axis.upper()
 
-        if step <= 0:
-            raise ValueError("Bước jog phải lớn hơn 0.")
+        if axis not in ("X", "Y", "Z"):
+            raise ValueError(f"Trục không hợp lệ: {axis}")
 
-        if direction not in (-1, 1):
-            raise ValueError("Chiều jog không hợp lệ.")
+        if direction == 0:
+            raise ValueError("Hướng jog không được bằng 0.")
 
-        current_value = self.get_position(axis)
-        next_value = current_value + direction * step
-        next_value = max(0.0, next_value)
+        direction = 1 if direction > 0 else -1
 
-        self.set_position(axis, next_value)
+        current_value = getattr(self.position, axis.lower())
+        new_value = max(0.0, current_value + direction * step_mm)
 
-        direction_text = "+" if direction > 0 else "-"
-        serial_message = self._send_serial_command(f"JOG {axis} {direction_text} {step:.1f}")
+        setattr(self.position, axis.lower(), new_value)
 
-        message = f"Manual: Jog trục {axis}{direction_text} tới {next_value:.1f} mm."
-        return next_value, self._join_serial_message(message, serial_message)
+        sign = "+" if direction > 0 else "-"
+
+        serial_message = self._send_serial_command(
+            f"JOG {axis} {sign} {step_mm:.1f}"
+        )
+
+        message = f"Manual: Jog trục {axis} dừng tại {new_value:.1f} mm."
+
+        if serial_message:
+            message = f"{message}\n{serial_message}"
+
+        return new_value, message
 
     def home(self) -> tuple[GantryPosition, str]:
         self.position = GantryPosition(x=0.0, y=0.0, z=0.0)
