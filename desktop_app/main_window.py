@@ -35,6 +35,7 @@ from core.color_repository import ColorRepository
 from core.gantry_service import GantryService
 from core.vision_processor import VisionProcessor, VisionResult
 from core.serial_service import SerialConfig, SerialService
+from core.network_service import NetworkConfig, NetworkService
 from core.product_counter_service import ProductCounterService
 from desktop_app.color_calibrator_dialog import ColorCalibratorDialog
 from desktop_app.roi_camera_label import ROICameraLabel
@@ -65,6 +66,15 @@ class MainWindow(QMainWindow):
                 timeout=float(serial_config.get("timeout", 1.0)),
                 ),
             mock_mode=bool(serial_config.get("mock_mode", True)),
+        )
+
+        network_config = self.app_config.get("network", {})
+        self.network_service = NetworkService(
+            config=NetworkConfig(
+                host=str(network_config.get("host", "192.168.4.1")),
+                port=int(network_config.get("port", 5000)),
+                timeout=float(network_config.get("timeout", 2.0)),
+            )
         )
 
         self.gantry = GantryService(serial_service=self.serial_service)
@@ -501,6 +511,18 @@ class MainWindow(QMainWindow):
         layout.setSpacing(INNER_GAP)
         layout.setContentsMargins(BOX_MARGIN, BOX_MARGIN, BOX_MARGIN, BOX_MARGIN)
 
+        mode_row = QHBoxLayout()
+        mode_row.setSpacing(ROW_GAP)
+        mode_row.setContentsMargins(0, 0, 0, 0)
+
+        mode_label = QLabel("Kiểu:")
+        self.connection_type_combo = QComboBox()
+        self.connection_type_combo.addItems(["USB Serial", "Wi-Fi ESP32"])
+        self.connection_type_combo.setMinimumHeight(36)
+
+        mode_row.addWidget(mode_label)
+        mode_row.addWidget(self.connection_type_combo, 1)
+
         port_row = QHBoxLayout()
         port_row.setSpacing(ROW_GAP)
         port_row.setContentsMargins(0, 0, 0, 0)
@@ -514,6 +536,26 @@ class MainWindow(QMainWindow):
         port_row.addWidget(self.com_port_combo, 1)
         port_row.addWidget(self.btn_scan_com)
 
+        network_row = QHBoxLayout()
+        network_row.setSpacing(ROW_GAP)
+        network_row.setContentsMargins(0, 0, 0, 0)
+
+        network_ip_label = QLabel("IP:")
+        self.network_host_input = QLineEdit()
+        self.network_host_input.setText("192.168.4.1")
+        self.network_host_input.setPlaceholderText("192.168.4.1")
+
+        network_port_label = QLabel("Port:")
+        self.network_port_input = QSpinBox()
+        self.network_port_input.setRange(1, 65535)
+        self.network_port_input.setValue(5000)
+        self.network_port_input.setFixedWidth(90)
+
+        network_row.addWidget(network_ip_label)
+        network_row.addWidget(self.network_host_input, 1)
+        network_row.addWidget(network_port_label)
+        network_row.addWidget(self.network_port_input)
+
         self.btn_esp_connect = QPushButton("KẾT NỐI ESP32")
         self.btn_esp_connect.setStyleSheet("background-color: #2563eb;")
 
@@ -524,14 +566,49 @@ class MainWindow(QMainWindow):
         self.esp_mock_note.setStyleSheet("color: #94a3b8;")
         self.esp_mock_note.setWordWrap(True)
 
+        layout.addLayout(mode_row)
         layout.addLayout(port_row)
+        layout.addLayout(network_row)
         layout.addWidget(self.btn_esp_connect)
         layout.addWidget(self.esp_status_label)
         layout.addWidget(self.esp_mock_note)
 
+        self.update_esp32_input_enabled()
         return box
 
+    def get_connection_mode(self) -> str:
+        if not hasattr(self, "connection_type_combo"):
+            return "serial"
+
+        text = self.connection_type_combo.currentText().strip().lower()
+
+        if text.startswith("wi-fi"):
+            return "wifi"
+
+        return "serial"
+
+    def get_current_esp32_service(self):
+        if self.get_connection_mode() == "wifi":
+            return self.network_service
+
+        return self.serial_service
+
     def get_serial_mode_note(self) -> str:
+        if self.get_connection_mode() == "wifi":
+            host = "192.168.4.1"
+            port = 5000
+
+            if hasattr(self, "network_host_input"):
+                host = self.network_host_input.text().strip() or host
+
+            if hasattr(self, "network_port_input"):
+                port = int(self.network_port_input.value())
+
+            return (
+                f"Wi-Fi mode: dùng ESP32 SoftAP tại {host}:{port}. "
+                "Laptop cần kết nối mạng GANTRY_ESP32."
+            )
+
         if self.serial_service.using_mock_connection:
             return "Mock mode: bật. Đang dùng MOCK_COM để test không cần ESP32."
 
@@ -543,6 +620,34 @@ class MainWindow(QMainWindow):
     def refresh_serial_mode_note(self) -> None:
         if hasattr(self, "esp_mock_note"):
             self.esp_mock_note.setText(self.get_serial_mode_note())
+
+    def update_esp32_input_enabled(self) -> None:
+        if not hasattr(self, "connection_type_combo"):
+            return
+
+        connected = self.serial_service.connected or self.network_service.connected
+        wifi_mode = self.get_connection_mode() == "wifi"
+
+        self.connection_type_combo.setEnabled(not connected)
+
+        self.com_port_combo.setEnabled((not connected) and (not wifi_mode))
+        self.btn_scan_com.setEnabled((not connected) and (not wifi_mode))
+
+        self.network_host_input.setEnabled((not connected) and wifi_mode)
+        self.network_port_input.setEnabled((not connected) and wifi_mode)
+
+    def handle_connection_type_changed(self) -> None:
+        if self.serial_service.connected or self.network_service.connected:
+            return
+
+        self.gantry.serial_service = self.get_current_esp32_service()
+        self.update_esp32_input_enabled()
+        self.refresh_serial_mode_note()
+
+        if self.get_connection_mode() == "wifi":
+            self.esp_status_label.setText("Trạng thái: Chọn Wi-Fi ESP32, chưa kết nối")
+        else:
+            self.esp_status_label.setText("Trạng thái: Chọn USB Serial, chưa kết nối")
 
     def build_settings_box(self) -> QGroupBox:
         box = QGroupBox("CÀI ĐẶT HỆ THỐNG")
@@ -821,12 +926,13 @@ class MainWindow(QMainWindow):
         self.btn_choose_model.clicked.connect(self.handle_choose_model)
         self.btn_reload_model.clicked.connect(self.handle_reload_model)
         self.chk_yolo_enabled.toggled.connect(self.handle_yolo_toggle)
+        self.connection_type_combo.currentTextChanged.connect(self.handle_connection_type_changed)
         self.btn_scan_com.clicked.connect(self.handle_scan_com_ports)
         self.btn_esp_connect.clicked.connect(self.handle_esp32_connect_toggle)
 
     def handle_start(self) -> None:
         if self.state.mode in (MachineMode.AUTO_READY, MachineMode.PAUSED):
-            if not self.serial_service.connected:
+            if not self.get_current_esp32_service().connected:
                 self.append_log("Không thể chạy AUTO: ESP32 chưa kết nối.", level="WARN")
                 return
 
@@ -835,7 +941,7 @@ class MainWindow(QMainWindow):
 
 
     def handle_pause(self) -> None:
-        if self.state.running and not self.serial_service.connected:
+        if self.state.running and not self.get_current_esp32_service().connected:
             self.append_log("Không thể PAUSE: ESP32 chưa kết nối.", level="WARN")
             return
 
@@ -1491,18 +1597,20 @@ class MainWindow(QMainWindow):
             self.append_log("Đã tắt YOLO; dùng ROI + Sampling Box.")
 
     def send_serial_command(self, command: str) -> bool:
-        if not self.serial_service.connected:
-            self.append_log(f"Serial chưa kết nối. Bỏ qua lệnh: {command}", level="WARN")
+        service = self.get_current_esp32_service()
+
+        if not service.connected:
+            self.append_log(f"ESP32 chưa kết nối. Bỏ qua lệnh: {command}", level="WARN")
             return False
 
         try:
-            message = self.serial_service.send_command(command)
+            message = service.send_command(command)
         except Exception as error:
             self.append_log(str(error), level="ERROR")
 
-            if not self.serial_service.connected:
+            if not service.connected:
                 self.handle_serial_connection_lost(
-                    "Mất kết nối khi gửi lệnh Serial."
+                    "Mất kết nối khi gửi lệnh tới ESP32."
                 )
 
             return False
@@ -1519,23 +1627,36 @@ class MainWindow(QMainWindow):
         self.apply_state_to_ui()
 
     def check_serial_connection(self) -> None:
-        """Được QTimer gọi định kỳ để phát hiện ESP32 bị rút khỏi USB."""
-        if not self.serial_service.connected:
+        """QTimer kiểm tra kết nối ESP32 hiện tại: USB Serial hoặc Wi-Fi."""
+        service = self.get_current_esp32_service()
+
+        if not service.connected:
             return
 
-        if self.serial_service.is_connection_alive():
+        if service.is_connection_alive():
             return
 
-        self.handle_serial_connection_lost(
-            f"ESP32 tại {self.serial_service.config.port} đã bị rút hoặc mất kết nối."
-        )
+        if service is self.network_service:
+            target = f"{self.network_service.config.host}:{self.network_service.config.port}"
+            message = f"ESP32 Wi-Fi tại {target} đã mất kết nối."
+        else:
+            message = (
+                f"ESP32 tại {self.serial_service.config.port} "
+                "đã bị rút hoặc mất kết nối."
+            )
+
+        self.handle_serial_connection_lost(message)
 
     def handle_serial_connection_lost(self, message: str) -> None:
-        """Đưa trạng thái Serial và giao diện về disconnected an toàn."""
+        """Đưa trạng thái kết nối ESP32 và giao diện về disconnected an toàn."""
+        service = self.get_current_esp32_service()
+
         try:
-            self.serial_service.disconnect()
+            service.disconnect()
         except Exception:
             pass
+
+        self.gantry.serial_service = self.get_current_esp32_service()
 
         self.esp_badge.setText("ESP32: MẤT KẾT NỐI")
         self.esp_status_label.setText("Trạng thái: Mất kết nối ESP32")
@@ -1544,18 +1665,24 @@ class MainWindow(QMainWindow):
         )
         self.btn_esp_connect.setText("KẾT NỐI ESP32")
         self.btn_esp_connect.setStyleSheet("background-color: #2563eb;")
-        self.com_port_combo.setEnabled(True)
-        self.btn_scan_com.setEnabled(True)
+        self.update_esp32_input_enabled()
 
-        # Không cho AUTO tiếp tục gửi lệnh vào một kết nối đã mất.
         if self.state.running:
             transition = self.state.pause()
             self.apply_state_transition(transition)
 
         self.append_log(message, level="ERROR")
-        self.handle_scan_com_ports()
+
+        if self.get_connection_mode() == "serial":
+            self.handle_scan_com_ports()
+
+        self.refresh_serial_mode_note()
 
     def handle_scan_com_ports(self) -> None:
+        if hasattr(self, "connection_type_combo") and self.get_connection_mode() == "wifi":
+            self.refresh_serial_mode_note()
+            return
+
         ports = self.serial_service.list_available_ports()
         saved_port = self.serial_service.config.port
 
@@ -1564,6 +1691,7 @@ class MainWindow(QMainWindow):
         if not ports:
             self.com_port_combo.addItem("Không tìm thấy COM")
             self.append_log("Không tìm thấy cổng COM nào.", level="WARN")
+            self.update_esp32_input_enabled()
             return
 
         self.com_port_combo.addItems(ports)
@@ -1573,30 +1701,71 @@ class MainWindow(QMainWindow):
 
         self.append_log(f"Đã quét COM: {', '.join(ports)}")
         self.refresh_serial_mode_note()
+        self.update_esp32_input_enabled()
 
     def handle_esp32_connect_toggle(self) -> None:
-        if self.serial_service.connected:
+        service = self.get_current_esp32_service()
+
+        if service.connected:
             self.handle_esp32_disconnect()
             return
 
         self.handle_esp32_connect()
 
     def handle_esp32_connect(self) -> None:
-        selected_port = self.com_port_combo.currentText().strip()
-
-        if not selected_port or selected_port == "Không tìm thấy COM":
-            self.append_log("Chưa chọn cổng COM hợp lệ.", level="WARN")
-            return
+        mode = self.get_connection_mode()
 
         try:
-            self.serial_service.set_port(selected_port)
-            self.refresh_serial_mode_note()
-            message = self.serial_service.connect()
+            if mode == "wifi":
+                host = self.network_host_input.text().strip()
+                port = int(self.network_port_input.value())
 
-            # Nếu người dùng chọn COM thật, chuyển service sang real mode ngay
-            # trong phiên hiện tại để UI/log không còn báo mock gây nhầm.
-            self.serial_service.mock_mode = self.serial_service.using_mock_connection
-            self.refresh_serial_mode_note()
+                if not host:
+                    self.append_log("Chưa nhập IP ESP32 Wi-Fi.", level="WARN")
+                    return
+
+                self.network_service.set_host(host)
+                self.network_service.set_port(port)
+                message = self.network_service.connect()
+
+                self.gantry.serial_service = self.network_service
+                badge_text = "ESP32: Wi-Fi"
+                status_text = f"Trạng thái: Đã kết nối Wi-Fi {host}:{port}"
+
+                self.config_service.set("esp32.transport", "wifi")
+                self.config_service.set("network.host", host)
+                self.config_service.set("network.port", port)
+                self.config_service.set("network.timeout", self.network_service.config.timeout)
+
+            else:
+                selected_port = self.com_port_combo.currentText().strip()
+
+                if not selected_port or selected_port == "Không tìm thấy COM":
+                    self.append_log("Chưa chọn cổng COM hợp lệ.", level="WARN")
+                    return
+
+                self.serial_service.set_port(selected_port)
+                self.refresh_serial_mode_note()
+                message = self.serial_service.connect()
+
+                self.serial_service.mock_mode = self.serial_service.using_mock_connection
+                self.refresh_serial_mode_note()
+
+                self.gantry.serial_service = self.serial_service
+
+                badge_text = (
+                    "ESP32: MOCK"
+                    if self.serial_service.using_mock_connection
+                    else "ESP32: USB"
+                )
+                status_text = f"Trạng thái: Đã kết nối {selected_port}"
+
+                self.config_service.set("esp32.transport", "serial")
+                self.config_service.set("serial.port", selected_port)
+                self.config_service.set("serial.mock_mode", self.serial_service.using_mock_connection)
+                self.config_service.set("serial.baudrate", self.serial_service.config.baudrate)
+                self.config_service.set("serial.timeout", self.serial_service.config.timeout)
+
         except Exception as error:
             self.esp_badge.setText("ESP32: LỖI")
             self.esp_status_label.setText("Trạng thái: Kết nối thất bại")
@@ -1604,41 +1773,34 @@ class MainWindow(QMainWindow):
             self.append_log(str(error), level="ERROR")
             return
 
-        badge_text = (
-            "ESP32: MOCK"
-            if self.serial_service.using_mock_connection
-            else "ESP32: ĐÃ KẾT NỐI"
-        )
         self.esp_badge.setText(badge_text)
-        self.esp_status_label.setText(f"Trạng thái: Đã kết nối {selected_port}")
+        self.esp_status_label.setText(status_text)
         self.esp_status_label.setStyleSheet("color: #22c55e; font-weight: 700;")
         self.btn_esp_connect.setText("NGẮT KẾT NỐI")
         self.btn_esp_connect.setStyleSheet("background-color: #7f1d1d;")
-        self.com_port_combo.setEnabled(False)
-        self.btn_scan_com.setEnabled(False)
+        self.update_esp32_input_enabled()
 
         self.append_log(message)
-
-        self.config_service.set("serial.port", selected_port)
-        self.config_service.set("serial.mock_mode", self.serial_service.using_mock_connection)
-        self.config_service.set("serial.baudrate", self.serial_service.config.baudrate)
-        self.config_service.set("serial.timeout", self.serial_service.config.timeout)
         self.config_service.save()
+        self.refresh_serial_mode_note()
 
     def handle_esp32_disconnect(self) -> None:
+        service = self.get_current_esp32_service()
+
         try:
-            message = self.serial_service.disconnect()
+            message = service.disconnect()
         except Exception as error:
             self.append_log(str(error), level="ERROR")
             return
+
+        self.gantry.serial_service = self.get_current_esp32_service()
 
         self.esp_badge.setText("ESP32: CHƯA GẮN")
         self.esp_status_label.setText("Trạng thái: Chưa kết nối")
         self.esp_status_label.setStyleSheet("color: #facc15; font-weight: 700;")
         self.btn_esp_connect.setText("KẾT NỐI ESP32")
         self.btn_esp_connect.setStyleSheet("background-color: #2563eb;")
-        self.com_port_combo.setEnabled(True)
-        self.btn_scan_com.setEnabled(True)
+        self.update_esp32_input_enabled()
 
         self.append_log(message)
         self.refresh_serial_mode_note()
@@ -1662,6 +1824,26 @@ class MainWindow(QMainWindow):
         self.chk_yolo_enabled.setChecked(yolo_enabled)
         self.chk_yolo_enabled.blockSignals(False)
         self.vision_processor.product_detector.set_enabled(yolo_enabled)
+
+        transport_mode = str(self.config_service.get("esp32.transport", "serial"))
+        network_host = str(self.config_service.get("network.host", "192.168.4.1"))
+        network_port = int(self.config_service.get("network.port", 5000))
+
+        self.network_host_input.setText(network_host)
+        self.network_port_input.setValue(network_port)
+
+        self.connection_type_combo.blockSignals(True)
+        if transport_mode.lower() == "wifi":
+            self.connection_type_combo.setCurrentText("Wi-Fi ESP32")
+        else:
+            self.connection_type_combo.setCurrentText("USB Serial")
+        self.connection_type_combo.blockSignals(False)
+
+        self.network_service.config.host = network_host
+        self.network_service.config.port = network_port
+        self.gantry.serial_service = self.get_current_esp32_service()
+        self.update_esp32_input_enabled()
+        self.refresh_serial_mode_note()
 
         last_x = float(self.config_service.get("gantry.last_position.x", 0.0))
         last_y = float(self.config_service.get("gantry.last_position.y", 0.0))
