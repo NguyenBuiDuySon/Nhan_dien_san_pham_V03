@@ -16,8 +16,8 @@
   "gantry": {
     "default_jog_step_mm": 5.0,
     "last_position": {
-      "x": 0.0,
-      "y": 0.0,
+      "x": 45.0,
+      "y": 30.0,
       "z": 0.0
     },
     "home": {
