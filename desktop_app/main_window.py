@@ -1766,9 +1766,9 @@ class MainWindow(QMainWindow):
 
         final_value = self.get_axis_value(self.active_jog_axis)
 
-        # self.append_log(
-        #     f"Manual: Jog trục {self.active_jog_axis} dừng tại {final_value:.1f} mm."
-        # )
+        self.append_log(
+             f"Manual: Jog trục {self.active_jog_axis} dừng tại {final_value:.1f} mm."
+         )
 
         self.save_gantry_position_to_config()
         self.active_jog_axis = None
