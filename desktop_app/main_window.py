@@ -520,7 +520,7 @@ class MainWindow(QMainWindow):
         self.esp_status_label = QLabel("Trạng thái: Chưa kết nối")
         self.esp_status_label.setStyleSheet("color: #facc15; font-weight: 700;")
 
-        self.esp_mock_note = QLabel("Mock mode: bật. Có thể test khi chưa cắm ESP32.")
+        self.esp_mock_note = QLabel(self.get_serial_mode_note())
         self.esp_mock_note.setStyleSheet("color: #94a3b8;")
         self.esp_mock_note.setWordWrap(True)
 
@@ -530,6 +530,19 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.esp_mock_note)
 
         return box
+
+    def get_serial_mode_note(self) -> str:
+        if self.serial_service.using_mock_connection:
+            return "Mock mode: bật. Đang dùng MOCK_COM để test không cần ESP32."
+
+        if self.serial_service.mock_mode:
+            return "Mock mode: bật nhưng đang chọn COM thật; app sẽ mở cổng ESP32 thật."
+
+        return "Mock mode: tắt. Đang dùng ESP32 thật qua cổng COM."
+
+    def refresh_serial_mode_note(self) -> None:
+        if hasattr(self, "esp_mock_note"):
+            self.esp_mock_note.setText(self.get_serial_mode_note())
 
     def build_settings_box(self) -> QGroupBox:
         box = QGroupBox("CÀI ĐẶT HỆ THỐNG")
@@ -957,9 +970,8 @@ class MainWindow(QMainWindow):
     def check_serial_config(self) -> None:
         port = self.serial_service.config.port
         baudrate = self.serial_service.config.baudrate
-        mock_mode = self.serial_service.mock_mode
 
-        if mock_mode:
+        if self.serial_service.using_mock_connection:
             self.append_log(
                 f"CHECK SERIAL: OK mock mode, port={port}, baudrate={baudrate}."
             )
@@ -1560,6 +1572,7 @@ class MainWindow(QMainWindow):
             self.com_port_combo.setCurrentText(saved_port)
 
         self.append_log(f"Đã quét COM: {', '.join(ports)}")
+        self.refresh_serial_mode_note()
 
     def handle_esp32_connect_toggle(self) -> None:
         if self.serial_service.connected:
@@ -1577,7 +1590,13 @@ class MainWindow(QMainWindow):
 
         try:
             self.serial_service.set_port(selected_port)
+            self.refresh_serial_mode_note()
             message = self.serial_service.connect()
+
+            # Nếu người dùng chọn COM thật, chuyển service sang real mode ngay
+            # trong phiên hiện tại để UI/log không còn báo mock gây nhầm.
+            self.serial_service.mock_mode = self.serial_service.using_mock_connection
+            self.refresh_serial_mode_note()
         except Exception as error:
             self.esp_badge.setText("ESP32: LỖI")
             self.esp_status_label.setText("Trạng thái: Kết nối thất bại")
@@ -1601,7 +1620,7 @@ class MainWindow(QMainWindow):
         self.append_log(message)
 
         self.config_service.set("serial.port", selected_port)
-        self.config_service.set("serial.mock_mode", self.serial_service.mock_mode)
+        self.config_service.set("serial.mock_mode", self.serial_service.using_mock_connection)
         self.config_service.set("serial.baudrate", self.serial_service.config.baudrate)
         self.config_service.set("serial.timeout", self.serial_service.config.timeout)
         self.config_service.save()
@@ -1622,6 +1641,7 @@ class MainWindow(QMainWindow):
         self.btn_scan_com.setEnabled(True)
 
         self.append_log(message)
+        self.refresh_serial_mode_note()
 
     def apply_config_to_ui(self) -> None:
         jog_step = float(

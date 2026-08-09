@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import time
 
 try:
     import serial
@@ -21,11 +22,10 @@ class SerialService:
     """Quản lý giao tiếp Serial với ESP32.
 
     Quy ước mock:
-    - Chỉ dùng mock khi ``mock_mode=True`` và port là ``MOCK_COM``.
-    - Nếu người dùng chọn COM thật, service luôn mở cổng thật. Cách này tránh
-      tình trạng giao diện báo xanh giả dù ESP32 chưa thực sự được mở.
-
-    Service cũng có ``is_connection_alive()`` để app kiểm tra cổng định kỳ.
+    - Chỉ dùng mock khi mock_mode=True và port là MOCK_COM.
+    - Nếu người dùng chọn COM thật, service sẽ mở cổng thật.
+    - Sau mỗi lệnh thật, service đọc phản hồi ACK/ERR từ ESP32 để app biết
+      ESP32 đã nhận lệnh.
     """
 
     MOCK_PORT = "MOCK_COM"
@@ -83,13 +83,12 @@ class SerialService:
         if serial is None:
             raise RuntimeError("Chưa cài pyserial. Hãy chạy: pip install pyserial")
 
-        # Không cho kết nối vào tên COM đã biến mất khỏi Windows.
         physical_ports = self._physical_ports()
 
         if self.config.port not in physical_ports:
             raise RuntimeError(
                 f"Serial: không tìm thấy cổng {self.config.port}. "
-                "Hãy quét COM và cắm lại ESP32."
+                "Hãy quét COM, kiểm tra Device Manager và cắm lại ESP32."
             )
 
         try:
@@ -99,6 +98,11 @@ class SerialService:
                 timeout=self.config.timeout,
                 write_timeout=self.config.timeout,
             )
+
+            # ESP32 thường reset khi mở COM qua USB. Chờ ngắn để firmware sẵn sàng.
+            time.sleep(1.2)
+            self._clear_input_buffer()
+
             self.connected = True
             return f"Serial: đã kết nối ESP32 tại {self.config.port}."
         except Exception as error:
@@ -118,13 +122,7 @@ class SerialService:
         return "Serial: đã ngắt kết nối ESP32."
 
     def is_connection_alive(self) -> bool:
-        """Kiểm tra thiết bị còn thực sự tồn tại hay không.
-
-        Với COM thật, chỉ ``connection.is_open`` chưa đủ vì Windows đôi khi vẫn
-        giữ handle mở một lúc sau khi rút USB. Vì vậy service kiểm tra thêm:
-        1. Tên COM còn nằm trong danh sách cổng của hệ điều hành.
-        2. Thuộc tính ``in_waiting`` còn đọc được mà không phát sinh lỗi.
-        """
+        """Kiểm tra thiết bị còn thực sự tồn tại hay không."""
 
         if not self.connected:
             return False
@@ -145,7 +143,6 @@ class SerialService:
                 self._mark_disconnected()
                 return False
 
-            # Truy cập driver để phát hiện USB đã bị rút.
             _ = self.connection.in_waiting
             return True
         except Exception:
@@ -161,21 +158,29 @@ class SerialService:
         if not self.is_connection_alive():
             raise RuntimeError("Serial chưa kết nối hoặc ESP32 đã bị rút.")
 
-        payload = f"{command}\n"
-
         if self.using_mock_connection:
             self.sent_commands.append(command)
             return f"Serial mock TX: {command}"
 
         try:
             assert self.connection is not None
-            self.connection.write(payload.encode("utf-8"))
+
+            self._clear_input_buffer()
+
+            payload = f"{command}\n".encode("utf-8")
+            self.connection.write(payload)
             self.connection.flush()
-            return f"Serial TX: {command}"
+
+            response = self._read_response()
+
+            if response:
+                return f"Serial TX: {command} | RX: {response}"
+
+            return f"Serial TX: {command} | RX: không có phản hồi"
         except Exception as error:
             self._mark_disconnected()
             raise RuntimeError(
-                f"Serial: gửi lệnh thất bại, đã chuyển sang mất kết nối - {error}"
+                f"Serial: gửi/đọc lệnh thất bại, đã chuyển sang mất kết nối - {error}"
             ) from error
 
     def read_line(self) -> str:
@@ -193,6 +198,53 @@ class SerialService:
             raise RuntimeError(
                 f"Serial: đọc phản hồi thất bại, đã ngắt kết nối - {error}"
             ) from error
+
+    def _read_response(self) -> str:
+        """Đọc ACK/ERR từ ESP32 sau một lệnh.
+
+        Hỗ trợ cả 2 kiểu firmware:
+        - Trả 1 dòng: ACK HOME
+        - Trả 2 dòng: RX: HOME rồi ACK HOME
+        """
+
+        if self.connection is None:
+            return ""
+
+        lines: list[str] = []
+        old_timeout = self.connection.timeout
+
+        try:
+            # Đọc từng dòng ngắn để UI không bị treo quá lâu.
+            self.connection.timeout = min(float(self.config.timeout), 0.25)
+            deadline = time.monotonic() + max(float(self.config.timeout), 0.8)
+
+            while time.monotonic() < deadline:
+                raw = self.connection.readline()
+                if not raw:
+                    continue
+
+                line = raw.decode("utf-8", errors="ignore").strip()
+                if not line:
+                    continue
+
+                lines.append(line)
+
+                upper_line = line.upper()
+                if upper_line.startswith("ACK") or upper_line.startswith("ERR"):
+                    break
+
+            return " ; ".join(lines)
+        finally:
+            self.connection.timeout = old_timeout
+
+    def _clear_input_buffer(self) -> None:
+        if self.connection is None:
+            return
+
+        try:
+            self.connection.reset_input_buffer()
+        except Exception:
+            pass
 
     def _physical_ports(self) -> list[str]:
         if list_ports is None:
@@ -212,6 +264,4 @@ class SerialService:
             if connection.is_open:
                 connection.close()
         except Exception:
-            # Khi USB bị rút, close() cũng có thể ném lỗi. Trạng thái nội bộ
-            # vẫn phải được đưa về disconnected.
             pass
