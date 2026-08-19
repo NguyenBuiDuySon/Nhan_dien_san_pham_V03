@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QDoubleSpinBox,
     QFileDialog,
+    QDialog,
     QFrame,
     QGridLayout,
     QGroupBox,
@@ -35,7 +36,6 @@ from core.color_repository import ColorRepository
 from core.gantry_service import GantryService
 from core.vision_processor import VisionProcessor, VisionResult
 from core.serial_service import SerialConfig, SerialService
-from core.network_service import NetworkConfig, NetworkService
 from core.product_counter_service import ProductCounterService
 from desktop_app.color_calibrator_dialog import ColorCalibratorDialog
 from desktop_app.roi_camera_label import ROICameraLabel
@@ -66,15 +66,6 @@ class MainWindow(QMainWindow):
                 timeout=float(serial_config.get("timeout", 1.0)),
                 ),
             mock_mode=bool(serial_config.get("mock_mode", True)),
-        )
-
-        network_config = self.app_config.get("network", {})
-        self.network_service = NetworkService(
-            config=NetworkConfig(
-                host=str(network_config.get("host", "192.168.4.1")),
-                port=int(network_config.get("port", 5000)),
-                timeout=float(network_config.get("timeout", 2.0)),
-            )
         )
 
         self.gantry = GantryService(serial_service=self.serial_service)
@@ -299,9 +290,16 @@ class MainWindow(QMainWindow):
         self.btn_home = QPushButton("VỀ GỐC")
         self.btn_home.setStyleSheet("background-color: #2563eb;")
 
+        self.btn_coordinate_manager = QPushButton("CÀI TỌA ĐỘ GẮP / THẢ")
+        self.btn_coordinate_manager.setStyleSheet("background-color: #0f766e;")
+        self.btn_coordinate_manager.setToolTip(
+            "Mở cửa sổ nhập tọa độ gắp và tọa độ thả theo từng màu đã lưu."
+        )
+
         layout.addLayout(vacuum_row)
         layout.addWidget(self.btn_axis_stop)
         layout.addWidget(self.btn_home)
+        layout.addWidget(self.btn_coordinate_manager)
 
         return self.maintenance_box
 
@@ -416,7 +414,6 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(0, 0, 0, 0)
 
         layout.addWidget(self.build_stats_box())
-        layout.addWidget(self.build_learning_box())
         layout.addWidget(self.build_model_box())
         layout.addWidget(self.build_esp32_box())
         layout.addWidget(self.build_settings_box())
@@ -511,18 +508,6 @@ class MainWindow(QMainWindow):
         layout.setSpacing(INNER_GAP)
         layout.setContentsMargins(BOX_MARGIN, BOX_MARGIN, BOX_MARGIN, BOX_MARGIN)
 
-        mode_row = QHBoxLayout()
-        mode_row.setSpacing(ROW_GAP)
-        mode_row.setContentsMargins(0, 0, 0, 0)
-
-        mode_label = QLabel("Kiểu:")
-        self.connection_type_combo = QComboBox()
-        self.connection_type_combo.addItems(["USB Serial", "Wi-Fi ESP32"])
-        self.connection_type_combo.setMinimumHeight(36)
-
-        mode_row.addWidget(mode_label)
-        mode_row.addWidget(self.connection_type_combo, 1)
-
         port_row = QHBoxLayout()
         port_row.setSpacing(ROW_GAP)
         port_row.setContentsMargins(0, 0, 0, 0)
@@ -536,26 +521,6 @@ class MainWindow(QMainWindow):
         port_row.addWidget(self.com_port_combo, 1)
         port_row.addWidget(self.btn_scan_com)
 
-        network_row = QHBoxLayout()
-        network_row.setSpacing(ROW_GAP)
-        network_row.setContentsMargins(0, 0, 0, 0)
-
-        network_ip_label = QLabel("IP:")
-        self.network_host_input = QLineEdit()
-        self.network_host_input.setText("192.168.4.1")
-        self.network_host_input.setPlaceholderText("192.168.4.1")
-
-        network_port_label = QLabel("Port:")
-        self.network_port_input = QSpinBox()
-        self.network_port_input.setRange(1, 65535)
-        self.network_port_input.setValue(5000)
-        self.network_port_input.setFixedWidth(90)
-
-        network_row.addWidget(network_ip_label)
-        network_row.addWidget(self.network_host_input, 1)
-        network_row.addWidget(network_port_label)
-        network_row.addWidget(self.network_port_input)
-
         self.btn_esp_connect = QPushButton("KẾT NỐI ESP32")
         self.btn_esp_connect.setStyleSheet("background-color: #2563eb;")
 
@@ -566,49 +531,14 @@ class MainWindow(QMainWindow):
         self.esp_mock_note.setStyleSheet("color: #94a3b8;")
         self.esp_mock_note.setWordWrap(True)
 
-        layout.addLayout(mode_row)
         layout.addLayout(port_row)
-        layout.addLayout(network_row)
         layout.addWidget(self.btn_esp_connect)
         layout.addWidget(self.esp_status_label)
         layout.addWidget(self.esp_mock_note)
 
-        self.update_esp32_input_enabled()
         return box
 
-    def get_connection_mode(self) -> str:
-        if not hasattr(self, "connection_type_combo"):
-            return "serial"
-
-        text = self.connection_type_combo.currentText().strip().lower()
-
-        if text.startswith("wi-fi"):
-            return "wifi"
-
-        return "serial"
-
-    def get_current_esp32_service(self):
-        if self.get_connection_mode() == "wifi":
-            return self.network_service
-
-        return self.serial_service
-
     def get_serial_mode_note(self) -> str:
-        if self.get_connection_mode() == "wifi":
-            host = "192.168.4.1"
-            port = 5000
-
-            if hasattr(self, "network_host_input"):
-                host = self.network_host_input.text().strip() or host
-
-            if hasattr(self, "network_port_input"):
-                port = int(self.network_port_input.value())
-
-            return (
-                f"Wi-Fi mode: dùng ESP32 SoftAP tại {host}:{port}. "
-                "Laptop cần kết nối mạng GANTRY_ESP32."
-            )
-
         if self.serial_service.using_mock_connection:
             return "Mock mode: bật. Đang dùng MOCK_COM để test không cần ESP32."
 
@@ -621,33 +551,124 @@ class MainWindow(QMainWindow):
         if hasattr(self, "esp_mock_note"):
             self.esp_mock_note.setText(self.get_serial_mode_note())
 
-    def update_esp32_input_enabled(self) -> None:
-        if not hasattr(self, "connection_type_combo"):
-            return
+    def build_pick_position_box(self) -> QGroupBox:
+        box = QGroupBox("TỌA ĐỘ LÀM VIỆC")
+        layout = QVBoxLayout(box)
+        layout.setSpacing(INNER_GAP)
+        layout.setContentsMargins(BOX_MARGIN, BOX_MARGIN, BOX_MARGIN, BOX_MARGIN)
 
-        connected = self.serial_service.connected or self.network_service.connected
-        wifi_mode = self.get_connection_mode() == "wifi"
+        note = QLabel(
+            "Nhập tọa độ X/Y/Z rồi bấm LƯU để gửi xuống ESP32. "
+            "Nút ĐI ĐẾN dùng để kiểm tra nhanh điểm đã lưu."
+        )
+        note.setWordWrap(True)
+        note.setStyleSheet("color: #94a3b8;")
+        layout.addWidget(note)
 
-        self.connection_type_combo.setEnabled(not connected)
+        self.machine_point_inputs: dict[str, tuple[QDoubleSpinBox, QDoubleSpinBox, QDoubleSpinBox]] = {}
 
-        self.com_port_combo.setEnabled((not connected) and (not wifi_mode))
-        self.btn_scan_com.setEnabled((not connected) and (not wifi_mode))
+        default_points = {
+            "pick": (60.0, 85.0, 70.0),
+            "red": (250.0, 165.0, 30.0),
+            "blue": (250.0, 55.0, 30.0),
+            "yellow": (250.0, 270.0, 30.0),
+            "error": (250.0, 270.0, 30.0),
+        }
 
-        self.network_host_input.setEnabled((not connected) and wifi_mode)
-        self.network_port_input.setEnabled((not connected) and wifi_mode)
+        titles = {
+            "pick": "📍 Vị trí gắp",
+            "red": "🔴 Màu đỏ",
+            "blue": "🔵 Màu xanh",
+            "yellow": "🟡 Màu vàng",
+            "error": "⚪ Vật không xác định",
+        }
 
-    def handle_connection_type_changed(self) -> None:
-        if self.serial_service.connected or self.network_service.connected:
-            return
+        for point_key in ("pick", "red", "blue", "yellow", "error"):
+            self.add_machine_point_editor(
+                parent_layout=layout,
+                point_key=point_key,
+                title=titles[point_key],
+                default_xyz=default_points[point_key],
+            )
 
-        self.gantry.serial_service = self.get_current_esp32_service()
-        self.update_esp32_input_enabled()
-        self.refresh_serial_mode_note()
+        return box
 
-        if self.get_connection_mode() == "wifi":
-            self.esp_status_label.setText("Trạng thái: Chọn Wi-Fi ESP32, chưa kết nối")
-        else:
-            self.esp_status_label.setText("Trạng thái: Chọn USB Serial, chưa kết nối")
+    def add_machine_point_editor(
+        self,
+        parent_layout: QVBoxLayout,
+        point_key: str,
+        title: str,
+        default_xyz: tuple[float, float, float],
+    ) -> None:
+        card = QFrame()
+        card.setObjectName("Card")
+        card_layout = QVBoxLayout(card)
+        card_layout.setSpacing(4)
+        card_layout.setContentsMargins(8, 8, 8, 8)
+
+        title_label = QLabel(title)
+        title_label.setStyleSheet("font-weight: 800;")
+        card_layout.addWidget(title_label)
+
+        saved = self.app_config.get("machine_points", {}).get(point_key, {})
+        x_value = float(saved.get("x", default_xyz[0]))
+        y_value = float(saved.get("y", default_xyz[1]))
+        z_value = float(saved.get("z", default_xyz[2]))
+
+        coord_row = QHBoxLayout()
+        coord_row.setSpacing(4)
+        coord_row.setContentsMargins(0, 0, 0, 0)
+
+        x_input = self.create_coordinate_spinbox(x_value, 0.0, 300.0)
+        y_input = self.create_coordinate_spinbox(y_value, 0.0, 300.0)
+        z_input = self.create_coordinate_spinbox(z_value, 0.0, 90.0)
+
+        coord_row.addWidget(QLabel("X:"))
+        coord_row.addWidget(x_input)
+        coord_row.addWidget(QLabel("Y:"))
+        coord_row.addWidget(y_input)
+        coord_row.addWidget(QLabel("Z:"))
+        coord_row.addWidget(z_input)
+
+        button_row = QHBoxLayout()
+        button_row.setSpacing(4)
+        button_row.setContentsMargins(0, 0, 0, 0)
+
+        btn_save = QPushButton("LƯU")
+        btn_save.setStyleSheet("background-color: #0f766e;")
+        btn_save.clicked.connect(
+            lambda checked=False, key=point_key: self.handle_send_machine_point(key)
+        )
+
+        btn_goto = QPushButton("ĐI ĐẾN")
+        btn_goto.setStyleSheet("background-color: #2563eb;")
+        btn_goto.clicked.connect(
+            lambda checked=False, key=point_key: self.handle_goto_machine_point(key)
+        )
+
+        button_row.addWidget(btn_save)
+        button_row.addWidget(btn_goto)
+
+        card_layout.addLayout(coord_row)
+        card_layout.addLayout(button_row)
+
+        self.machine_point_inputs[point_key] = (x_input, y_input, z_input)
+        parent_layout.addWidget(card)
+
+    def create_coordinate_spinbox(
+        self,
+        value: float,
+        minimum: float,
+        maximum: float,
+    ) -> QDoubleSpinBox:
+        spinbox = QDoubleSpinBox()
+        spinbox.setRange(minimum, maximum)
+        spinbox.setDecimals(1)
+        spinbox.setSingleStep(1.0)
+        spinbox.setValue(value)
+        spinbox.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
+        spinbox.setFixedWidth(62)
+        return spinbox
 
     def build_settings_box(self) -> QGroupBox:
         box = QGroupBox("CÀI ĐẶT HỆ THỐNG")
@@ -905,6 +926,7 @@ class MainWindow(QMainWindow):
         self.btn_vacuum_off.clicked.connect(self.handle_vacuum_off)
         self.btn_axis_stop.clicked.connect(self.handle_axis_stop)
         self.btn_home.clicked.connect(self.handle_home)
+        self.btn_coordinate_manager.clicked.connect(self.handle_open_coordinate_manager)
         self.jog_step_input.valueChanged.connect(self.handle_jog_step_changed)
 
         self.btn_camera_toggle.clicked.connect(self.handle_camera_toggle)
@@ -921,18 +943,15 @@ class MainWindow(QMainWindow):
         self.btn_open_calibrator.clicked.connect(self.handle_learn_color)
         self.camera_view.roi_changed.connect(self.handle_roi_changed)
 
-        self.btn_learn_color.clicked.connect(self.handle_learn_color)
-
         self.btn_choose_model.clicked.connect(self.handle_choose_model)
         self.btn_reload_model.clicked.connect(self.handle_reload_model)
         self.chk_yolo_enabled.toggled.connect(self.handle_yolo_toggle)
-        self.connection_type_combo.currentTextChanged.connect(self.handle_connection_type_changed)
         self.btn_scan_com.clicked.connect(self.handle_scan_com_ports)
         self.btn_esp_connect.clicked.connect(self.handle_esp32_connect_toggle)
 
     def handle_start(self) -> None:
         if self.state.mode in (MachineMode.AUTO_READY, MachineMode.PAUSED):
-            if not self.get_current_esp32_service().connected:
+            if not self.serial_service.connected:
                 self.append_log("Không thể chạy AUTO: ESP32 chưa kết nối.", level="WARN")
                 return
 
@@ -941,7 +960,7 @@ class MainWindow(QMainWindow):
 
 
     def handle_pause(self) -> None:
-        if self.state.running and not self.get_current_esp32_service().connected:
+        if self.state.running and not self.serial_service.connected:
             self.append_log("Không thể PAUSE: ESP32 chưa kết nối.", level="WARN")
             return
 
@@ -1483,7 +1502,13 @@ class MainWindow(QMainWindow):
 
     def handle_learn_color(self) -> None:
         """Mở cửa sổ trackbar HSV dùng chung camera với app."""
-        suggested_name = self.color_name_input.text().strip()
+        suggested_name = ""
+
+        if hasattr(self, "color_name_input"):
+            suggested_name = ""
+
+        if hasattr(self, "color_name_input"):
+            suggested_name = self.color_name_input.text().strip()
 
         if self.latest_camera_frame is None:
             self.append_log(
@@ -1502,7 +1527,9 @@ class MainWindow(QMainWindow):
         self.color_calibrator_dialog = dialog
         dialog.exec()
         self.color_calibrator_dialog = None
-        self.color_name_input.clear()
+
+        if hasattr(self, "color_name_input"):
+            self.color_name_input.clear()
 
     def get_latest_sample_crop(self):
         """Cung cấp ảnh Sampling Box mới nhất cho hộp hiệu chỉnh HSV."""
@@ -1512,7 +1539,8 @@ class MainWindow(QMainWindow):
         self.vision_processor.reload_colors()
         self.counter_service.configure_keys(self.color_repository.color_keys())
         self.rebuild_stat_cards()
-        self.append_log("Đã cập nhật hồ sơ màu từ config/colors.json.")
+        self.sync_machine_points_with_colors()
+        self.append_log("Đã cập nhật hồ sơ màu từ config/colors.json và đồng bộ tọa độ màu.")
 
     def handle_roi_changed(self, roi: dict) -> None:
         self.vision_processor.set_roi(roi)
@@ -1596,21 +1624,314 @@ class MainWindow(QMainWindow):
         else:
             self.append_log("Đã tắt YOLO; dùng ROI + Sampling Box.")
 
-    def send_serial_command(self, command: str) -> bool:
-        service = self.get_current_esp32_service()
+    def coordinate_point_keys(self) -> list[str]:
+        """Danh sách điểm tọa độ động theo màu đang lưu trong colors.json."""
+        color_keys = [key.strip().lower() for key in self.color_repository.color_keys()]
+        keys: list[str] = ["pick"]
 
-        if not service.connected:
-            self.append_log(f"ESP32 chưa kết nối. Bỏ qua lệnh: {command}", level="WARN")
+        for key in color_keys:
+            if key and key not in keys:
+                keys.append(key)
+
+        if "error" not in keys:
+            keys.append("error")
+
+        return keys
+
+    def default_machine_point_xyz(self, point_key: str) -> tuple[float, float, float]:
+        defaults = {
+            "pick": (60.0, 85.0, 70.0),
+            "blue": (250.0, 55.0, 30.0),
+            "red": (250.0, 165.0, 30.0),
+            "do": (250.0, 165.0, 30.0),
+            "yellow": (250.0, 270.0, 30.0),
+            "vang": (250.0, 270.0, 30.0),
+            "error": (250.0, 270.0, 30.0),
+        }
+        return defaults.get(point_key, (250.0, 270.0, 30.0))
+
+    def get_saved_machine_point_xyz(self, point_key: str) -> tuple[float, float, float]:
+        saved = self.app_config.get("machine_points", {}).get(point_key, {})
+        default_x, default_y, default_z = self.default_machine_point_xyz(point_key)
+
+        try:
+            x = float(saved.get("x", default_x))
+            y = float(saved.get("y", default_y))
+            z = float(saved.get("z", default_z))
+        except (TypeError, ValueError):
+            x, y, z = default_x, default_y, default_z
+
+        return x, y, z
+
+    def sync_machine_points_with_colors(self) -> None:
+        """Thêm/xóa tọa độ theo đúng danh sách màu đang tồn tại."""
+        valid_keys = set(self.coordinate_point_keys())
+        machine_points = dict(self.app_config.get("machine_points", {}))
+        changed = False
+
+        for key in list(machine_points.keys()):
+            if key not in valid_keys:
+                machine_points.pop(key, None)
+                changed = True
+
+        for key in valid_keys:
+            if key not in machine_points:
+                x, y, z = self.default_machine_point_xyz(key)
+                machine_points[key] = {"x": x, "y": y, "z": z}
+                changed = True
+
+        if changed:
+            self.app_config["machine_points"] = machine_points
+            self.config_service.set("machine_points", machine_points)
+            self.config_service.save()
+
+    def point_key_display_name(self, point_key: str) -> str:
+        if point_key == "pick":
+            return "📍 Vị trí gắp"
+
+        if point_key == "error":
+            return "⚪ Vật không xác định"
+
+        return f"● {self.color_repository.get_display_name(point_key)}"
+
+    def point_key_to_command_name(self, point_key: str) -> str:
+        if point_key == "pick":
+            return "PICK"
+
+        if point_key == "error":
+            return "ERROR"
+
+        return point_key.strip().upper()
+
+    def create_coordinate_spinbox(
+        self,
+        value: float,
+        minimum: float,
+        maximum: float,
+    ) -> QDoubleSpinBox:
+        spinbox = QDoubleSpinBox()
+        spinbox.setRange(minimum, maximum)
+        spinbox.setDecimals(1)
+        spinbox.setSingleStep(1.0)
+        spinbox.setValue(value)
+        spinbox.setSuffix(" mm")
+        spinbox.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
+        spinbox.setFixedWidth(95)
+        return spinbox
+
+    def handle_open_coordinate_manager(self) -> None:
+        self.sync_machine_points_with_colors()
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Cài đặt tọa độ gắp / thả")
+        dialog.resize(560, 620)
+
+        root_layout = QVBoxLayout(dialog)
+        root_layout.setSpacing(INNER_GAP)
+        root_layout.setContentsMargins(10, 10, 10, 10)
+
+        note = QLabel(
+            "Tọa độ được tạo tự động theo màu trong config/colors.json. "
+            "Thêm màu mới ở HIỆU CHỈNH MÀU thì cửa sổ này sẽ có thêm điểm thả. "
+            "Xóa màu thì tọa độ màu đó cũng bị ẩn/xóa khỏi cấu hình."
+        )
+        note.setWordWrap(True)
+        note.setStyleSheet("color: #94a3b8;")
+        root_layout.addWidget(note)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+
+        content = QWidget()
+        content_layout = QVBoxLayout(content)
+        content_layout.setSpacing(INNER_GAP)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.coordinate_dialog_inputs: dict[str, tuple[QDoubleSpinBox, QDoubleSpinBox, QDoubleSpinBox]] = {}
+
+        for point_key in self.coordinate_point_keys():
+            self.add_coordinate_dialog_row(content_layout, point_key)
+
+        content_layout.addStretch()
+        scroll.setWidget(content)
+        root_layout.addWidget(scroll, 1)
+
+        footer = QHBoxLayout()
+        footer.setSpacing(ROW_GAP)
+        footer.addStretch()
+
+        btn_send_all = QPushButton("GỬI TẤT CẢ")
+        btn_send_all.setStyleSheet("background-color: #0f766e;")
+        btn_send_all.clicked.connect(self.handle_send_all_machine_points)
+
+        btn_reload = QPushButton("ĐỒNG BỘ MÀU")
+        btn_reload.setStyleSheet("background-color: #475569;")
+        btn_reload.clicked.connect(lambda: self.reload_coordinate_dialog(dialog))
+
+        btn_close = QPushButton("ĐÓNG")
+        btn_close.setStyleSheet("background-color: #334155;")
+        btn_close.clicked.connect(dialog.accept)
+
+        footer.addWidget(btn_send_all)
+        footer.addWidget(btn_reload)
+        footer.addWidget(btn_close)
+        root_layout.addLayout(footer)
+
+        dialog.exec()
+        self.coordinate_dialog_inputs = {}
+
+    def reload_coordinate_dialog(self, dialog: QDialog) -> None:
+        self.sync_machine_points_with_colors()
+        dialog.accept()
+        QTimer.singleShot(0, self.handle_open_coordinate_manager)
+
+    def add_coordinate_dialog_row(self, parent_layout: QVBoxLayout, point_key: str) -> None:
+        card = QFrame()
+        card.setObjectName("Card")
+        card_layout = QVBoxLayout(card)
+        card_layout.setSpacing(6)
+        card_layout.setContentsMargins(8, 8, 8, 8)
+
+        title_label = QLabel(self.point_key_display_name(point_key))
+        title_label.setStyleSheet("font-weight: 900;")
+        card_layout.addWidget(title_label)
+
+        x_value, y_value, z_value = self.get_saved_machine_point_xyz(point_key)
+
+        coord_row = QHBoxLayout()
+        coord_row.setSpacing(4)
+        coord_row.setContentsMargins(0, 0, 0, 0)
+
+        x_input = self.create_coordinate_spinbox(x_value, 0.0, 300.0)
+        y_input = self.create_coordinate_spinbox(y_value, 0.0, 300.0)
+        z_input = self.create_coordinate_spinbox(z_value, 0.0, 90.0)
+
+        coord_row.addWidget(QLabel("X:"))
+        coord_row.addWidget(x_input)
+        coord_row.addWidget(QLabel("Y:"))
+        coord_row.addWidget(y_input)
+        coord_row.addWidget(QLabel("Z:"))
+        coord_row.addWidget(z_input)
+
+        button_row = QHBoxLayout()
+        button_row.setSpacing(ROW_GAP)
+        button_row.setContentsMargins(0, 0, 0, 0)
+
+        btn_save = QPushButton("LƯU")
+        btn_save.setStyleSheet("background-color: #0f766e;")
+        btn_save.clicked.connect(
+            lambda checked=False, key=point_key: self.handle_send_machine_point(key)
+        )
+
+        btn_goto = QPushButton("ĐI ĐẾN")
+        btn_goto.setStyleSheet("background-color: #2563eb;")
+        btn_goto.clicked.connect(
+            lambda checked=False, key=point_key: self.handle_goto_machine_point(key)
+        )
+
+        button_row.addWidget(btn_save)
+        button_row.addWidget(btn_goto)
+        button_row.addStretch()
+
+        card_layout.addLayout(coord_row)
+        card_layout.addLayout(button_row)
+
+        self.coordinate_dialog_inputs[point_key] = (x_input, y_input, z_input)
+        parent_layout.addWidget(card)
+
+    def get_machine_point_xyz(self, point_key: str) -> tuple[float, float, float]:
+        inputs = getattr(self, "coordinate_dialog_inputs", {}).get(point_key)
+
+        if inputs is None:
+            return self.get_saved_machine_point_xyz(point_key)
+
+        x_input, y_input, z_input = inputs
+        return float(x_input.value()), float(y_input.value()), float(z_input.value())
+
+    def handle_send_machine_point(self, point_key: str) -> None:
+        if self.state.running:
+            self.append_log(
+                "Không lưu tọa độ khi AUTO đang chạy. Hãy dừng chu trình trước.",
+                level="WARN",
+            )
+            return
+
+        x, y, z = self.get_machine_point_xyz(point_key)
+        command_name = self.point_key_to_command_name(point_key)
+
+        if point_key == "pick":
+            command = f"SET PICK {x:.1f} {y:.1f} {z:.1f}"
+        else:
+            command = f"SET DROP {command_name} {x:.1f} {y:.1f} {z:.1f}"
+
+        ok = self.send_serial_command(command)
+
+        if ok:
+            self.config_service.set(
+                f"machine_points.{point_key}",
+                {"x": x, "y": y, "z": z},
+            )
+            self.config_service.save()
+            self.app_config = self.config_service.load()
+            self.append_log(
+                f"Đã lưu điểm {command_name}: X={x:.1f}, Y={y:.1f}, Z={z:.1f}."
+            )
+
+    def handle_goto_machine_point(self, point_key: str) -> None:
+        if self.state.running:
+            self.append_log(
+                "Không di chuyển tới điểm khi AUTO đang chạy. Hãy dừng chu trình trước.",
+                level="WARN",
+            )
+            return
+
+        command_name = self.point_key_to_command_name(point_key)
+        self.send_serial_command(f"GOTO {command_name}")
+
+    def handle_send_all_machine_points(self) -> None:
+        if self.state.running:
+            self.append_log(
+                "Không gửi toàn bộ tọa độ khi AUTO đang chạy. Hãy dừng chu trình trước.",
+                level="WARN",
+            )
+            return
+
+        ok_count = 0
+
+        for point_key in self.coordinate_point_keys():
+            x, y, z = self.get_machine_point_xyz(point_key)
+            command_name = self.point_key_to_command_name(point_key)
+
+            if point_key == "pick":
+                command = f"SET PICK {x:.1f} {y:.1f} {z:.1f}"
+            else:
+                command = f"SET DROP {command_name} {x:.1f} {y:.1f} {z:.1f}"
+
+            if self.send_serial_command(command):
+                self.config_service.set(
+                    f"machine_points.{point_key}",
+                    {"x": x, "y": y, "z": z},
+                )
+                ok_count += 1
+
+        self.config_service.save()
+        self.app_config = self.config_service.load()
+        self.append_log(f"Đã gửi {ok_count} điểm tọa độ xuống ESP32.")
+
+    def send_serial_command(self, command: str) -> bool:
+        if not self.serial_service.connected:
+            self.append_log(f"Serial chưa kết nối. Bỏ qua lệnh: {command}", level="WARN")
             return False
 
         try:
-            message = service.send_command(command)
+            message = self.serial_service.send_command(command)
         except Exception as error:
             self.append_log(str(error), level="ERROR")
 
-            if not service.connected:
+            if not self.serial_service.connected:
                 self.handle_serial_connection_lost(
-                    "Mất kết nối khi gửi lệnh tới ESP32."
+                    "Mất kết nối khi gửi lệnh Serial."
                 )
 
             return False
@@ -1627,36 +1948,23 @@ class MainWindow(QMainWindow):
         self.apply_state_to_ui()
 
     def check_serial_connection(self) -> None:
-        """QTimer kiểm tra kết nối ESP32 hiện tại: USB Serial hoặc Wi-Fi."""
-        service = self.get_current_esp32_service()
-
-        if not service.connected:
+        """Được QTimer gọi định kỳ để phát hiện ESP32 bị rút khỏi USB."""
+        if not self.serial_service.connected:
             return
 
-        if service.is_connection_alive():
+        if self.serial_service.is_connection_alive():
             return
 
-        if service is self.network_service:
-            target = f"{self.network_service.config.host}:{self.network_service.config.port}"
-            message = f"ESP32 Wi-Fi tại {target} đã mất kết nối."
-        else:
-            message = (
-                f"ESP32 tại {self.serial_service.config.port} "
-                "đã bị rút hoặc mất kết nối."
-            )
-
-        self.handle_serial_connection_lost(message)
+        self.handle_serial_connection_lost(
+            f"ESP32 tại {self.serial_service.config.port} đã bị rút hoặc mất kết nối."
+        )
 
     def handle_serial_connection_lost(self, message: str) -> None:
-        """Đưa trạng thái kết nối ESP32 và giao diện về disconnected an toàn."""
-        service = self.get_current_esp32_service()
-
+        """Đưa trạng thái Serial và giao diện về disconnected an toàn."""
         try:
-            service.disconnect()
+            self.serial_service.disconnect()
         except Exception:
             pass
-
-        self.gantry.serial_service = self.get_current_esp32_service()
 
         self.esp_badge.setText("ESP32: MẤT KẾT NỐI")
         self.esp_status_label.setText("Trạng thái: Mất kết nối ESP32")
@@ -1665,24 +1973,18 @@ class MainWindow(QMainWindow):
         )
         self.btn_esp_connect.setText("KẾT NỐI ESP32")
         self.btn_esp_connect.setStyleSheet("background-color: #2563eb;")
-        self.update_esp32_input_enabled()
+        self.com_port_combo.setEnabled(True)
+        self.btn_scan_com.setEnabled(True)
 
+        # Không cho AUTO tiếp tục gửi lệnh vào một kết nối đã mất.
         if self.state.running:
             transition = self.state.pause()
             self.apply_state_transition(transition)
 
         self.append_log(message, level="ERROR")
-
-        if self.get_connection_mode() == "serial":
-            self.handle_scan_com_ports()
-
-        self.refresh_serial_mode_note()
+        self.handle_scan_com_ports()
 
     def handle_scan_com_ports(self) -> None:
-        if hasattr(self, "connection_type_combo") and self.get_connection_mode() == "wifi":
-            self.refresh_serial_mode_note()
-            return
-
         ports = self.serial_service.list_available_ports()
         saved_port = self.serial_service.config.port
 
@@ -1691,7 +1993,6 @@ class MainWindow(QMainWindow):
         if not ports:
             self.com_port_combo.addItem("Không tìm thấy COM")
             self.append_log("Không tìm thấy cổng COM nào.", level="WARN")
-            self.update_esp32_input_enabled()
             return
 
         self.com_port_combo.addItems(ports)
@@ -1701,71 +2002,30 @@ class MainWindow(QMainWindow):
 
         self.append_log(f"Đã quét COM: {', '.join(ports)}")
         self.refresh_serial_mode_note()
-        self.update_esp32_input_enabled()
 
     def handle_esp32_connect_toggle(self) -> None:
-        service = self.get_current_esp32_service()
-
-        if service.connected:
+        if self.serial_service.connected:
             self.handle_esp32_disconnect()
             return
 
         self.handle_esp32_connect()
 
     def handle_esp32_connect(self) -> None:
-        mode = self.get_connection_mode()
+        selected_port = self.com_port_combo.currentText().strip()
+
+        if not selected_port or selected_port == "Không tìm thấy COM":
+            self.append_log("Chưa chọn cổng COM hợp lệ.", level="WARN")
+            return
 
         try:
-            if mode == "wifi":
-                host = self.network_host_input.text().strip()
-                port = int(self.network_port_input.value())
+            self.serial_service.set_port(selected_port)
+            self.refresh_serial_mode_note()
+            message = self.serial_service.connect()
 
-                if not host:
-                    self.append_log("Chưa nhập IP ESP32 Wi-Fi.", level="WARN")
-                    return
-
-                self.network_service.set_host(host)
-                self.network_service.set_port(port)
-                message = self.network_service.connect()
-
-                self.gantry.serial_service = self.network_service
-                badge_text = "ESP32: Wi-Fi"
-                status_text = f"Trạng thái: Đã kết nối Wi-Fi {host}:{port}"
-
-                self.config_service.set("esp32.transport", "wifi")
-                self.config_service.set("network.host", host)
-                self.config_service.set("network.port", port)
-                self.config_service.set("network.timeout", self.network_service.config.timeout)
-
-            else:
-                selected_port = self.com_port_combo.currentText().strip()
-
-                if not selected_port or selected_port == "Không tìm thấy COM":
-                    self.append_log("Chưa chọn cổng COM hợp lệ.", level="WARN")
-                    return
-
-                self.serial_service.set_port(selected_port)
-                self.refresh_serial_mode_note()
-                message = self.serial_service.connect()
-
-                self.serial_service.mock_mode = self.serial_service.using_mock_connection
-                self.refresh_serial_mode_note()
-
-                self.gantry.serial_service = self.serial_service
-
-                badge_text = (
-                    "ESP32: MOCK"
-                    if self.serial_service.using_mock_connection
-                    else "ESP32: USB"
-                )
-                status_text = f"Trạng thái: Đã kết nối {selected_port}"
-
-                self.config_service.set("esp32.transport", "serial")
-                self.config_service.set("serial.port", selected_port)
-                self.config_service.set("serial.mock_mode", self.serial_service.using_mock_connection)
-                self.config_service.set("serial.baudrate", self.serial_service.config.baudrate)
-                self.config_service.set("serial.timeout", self.serial_service.config.timeout)
-
+            # Nếu người dùng chọn COM thật, chuyển service sang real mode ngay
+            # trong phiên hiện tại để UI/log không còn báo mock gây nhầm.
+            self.serial_service.mock_mode = self.serial_service.using_mock_connection
+            self.refresh_serial_mode_note()
         except Exception as error:
             self.esp_badge.setText("ESP32: LỖI")
             self.esp_status_label.setText("Trạng thái: Kết nối thất bại")
@@ -1773,34 +2033,41 @@ class MainWindow(QMainWindow):
             self.append_log(str(error), level="ERROR")
             return
 
+        badge_text = (
+            "ESP32: MOCK"
+            if self.serial_service.using_mock_connection
+            else "ESP32: ĐÃ KẾT NỐI"
+        )
         self.esp_badge.setText(badge_text)
-        self.esp_status_label.setText(status_text)
+        self.esp_status_label.setText(f"Trạng thái: Đã kết nối {selected_port}")
         self.esp_status_label.setStyleSheet("color: #22c55e; font-weight: 700;")
         self.btn_esp_connect.setText("NGẮT KẾT NỐI")
         self.btn_esp_connect.setStyleSheet("background-color: #7f1d1d;")
-        self.update_esp32_input_enabled()
+        self.com_port_combo.setEnabled(False)
+        self.btn_scan_com.setEnabled(False)
 
         self.append_log(message)
+
+        self.config_service.set("serial.port", selected_port)
+        self.config_service.set("serial.mock_mode", self.serial_service.using_mock_connection)
+        self.config_service.set("serial.baudrate", self.serial_service.config.baudrate)
+        self.config_service.set("serial.timeout", self.serial_service.config.timeout)
         self.config_service.save()
-        self.refresh_serial_mode_note()
 
     def handle_esp32_disconnect(self) -> None:
-        service = self.get_current_esp32_service()
-
         try:
-            message = service.disconnect()
+            message = self.serial_service.disconnect()
         except Exception as error:
             self.append_log(str(error), level="ERROR")
             return
-
-        self.gantry.serial_service = self.get_current_esp32_service()
 
         self.esp_badge.setText("ESP32: CHƯA GẮN")
         self.esp_status_label.setText("Trạng thái: Chưa kết nối")
         self.esp_status_label.setStyleSheet("color: #facc15; font-weight: 700;")
         self.btn_esp_connect.setText("KẾT NỐI ESP32")
         self.btn_esp_connect.setStyleSheet("background-color: #2563eb;")
-        self.update_esp32_input_enabled()
+        self.com_port_combo.setEnabled(True)
+        self.btn_scan_com.setEnabled(True)
 
         self.append_log(message)
         self.refresh_serial_mode_note()
@@ -1824,26 +2091,6 @@ class MainWindow(QMainWindow):
         self.chk_yolo_enabled.setChecked(yolo_enabled)
         self.chk_yolo_enabled.blockSignals(False)
         self.vision_processor.product_detector.set_enabled(yolo_enabled)
-
-        transport_mode = str(self.config_service.get("esp32.transport", "serial"))
-        network_host = str(self.config_service.get("network.host", "192.168.4.1"))
-        network_port = int(self.config_service.get("network.port", 5000))
-
-        self.network_host_input.setText(network_host)
-        self.network_port_input.setValue(network_port)
-
-        self.connection_type_combo.blockSignals(True)
-        if transport_mode.lower() == "wifi":
-            self.connection_type_combo.setCurrentText("Wi-Fi ESP32")
-        else:
-            self.connection_type_combo.setCurrentText("USB Serial")
-        self.connection_type_combo.blockSignals(False)
-
-        self.network_service.config.host = network_host
-        self.network_service.config.port = network_port
-        self.gantry.serial_service = self.get_current_esp32_service()
-        self.update_esp32_input_enabled()
-        self.refresh_serial_mode_note()
 
         last_x = float(self.config_service.get("gantry.last_position.x", 0.0))
         last_y = float(self.config_service.get("gantry.last_position.y", 0.0))
@@ -1949,8 +2196,8 @@ class MainWindow(QMainWindow):
         final_value = self.get_axis_value(self.active_jog_axis)
 
         self.append_log(
-             f"Manual: Jog trục {self.active_jog_axis} dừng tại {final_value:.1f} mm."
-         )
+            f"Manual: Jog trục {self.active_jog_axis} dừng tại {final_value:.1f} mm."
+        )
 
         self.save_gantry_position_to_config()
         self.active_jog_axis = None
